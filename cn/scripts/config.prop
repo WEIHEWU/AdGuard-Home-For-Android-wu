@@ -1,0 +1,15 @@
+# 注：以下修改后必须重启生效
+# AdGuardHome DNS 重定向端口
+redir_port=31587
+
+# SNI 深度嗅探防 HTTPDNS 绕过 (1: 开启极致防绕过与首包快通, 0: 纯DNS轻量模式)
+ENABLE_SNI=1
+
+# SNI 队列端口
+sni_ports="443,8443"
+
+# 代理订阅链接（若使用Box/Clash模块，可在此填入订阅链接；留空则不修改代理配置）
+PROXY_URL=""
+
+# 乐观缓存管理模式 (auto: 默认推荐，随 VPN 状态智能切换并在 App 中实时显示; force_on: 始终强制开启; force_off: 始终强制关闭/完全由你在 App 手动控制)
+OPTIMISTIC_CACHE_MODE="auto"
