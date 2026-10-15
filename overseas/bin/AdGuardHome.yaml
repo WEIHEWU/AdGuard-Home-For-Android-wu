@@ -160,8 +160,10 @@ user_rules:
   # Google 核心服务、Play 基础设施、Google Pay 与银行卡代币化 (Tokenization) 全链路白名单
   # 彻底解决 GMS 误杀、ERR_NAME_NOT_RESOLVED 以及 SNI 443 握手重置
   # =====================================================================
-  # --- Google 核心服务与 Play 基础设施 ---
-  - '@@||google.com^$important'
+  # --- Google 核心服务与 Play 基础设施（精确放行，绝不放行 ads/adservice 广告域名）---
+  - '@@||play.google.com^$important'
+  - '@@||accounts.google.com^$important'
+  - '@@||myaccount.google.com^$important'
   - '@@||googleapis.com^$important'
   - '@@||gstatic.com^$important'
   - '@@||googleusercontent.com^$important'
@@ -356,15 +358,15 @@ user_rules:
   - '||ymatuhin.ru^$important'
   - '||metrics.apple.com^$important'
   - '||metrics*.data.hicloud.com^$important'
-  - '# ||ads.*^$important # 已停用过宽通配符，避免误杀正常海外服务'
+  - '||ads.*^$important'
   - '||hotjar.com^$important'
-  - '# ||analytics.*^$important # 已停用过宽通配符，避免影响银行/企业登录风控'
+  - '||analytics.*^$important'
   - '||js.sentry-cdn.com^$important'
   - '||logconf.iflytek.com^$important'
   - '||api-hotjar.com^$important'
   - '||amazonclix.com^$important'
   - '||sa.api.intl.miui.com^$important'
-  - '# ||marketingplatform.google.com^$important # 避免干扰Google生态及服务分发'
+  - '||marketingplatform.google.com^$important'
   - '||bigdata.ssp.samsung.com^$important'
   - '||click.oneplus.com^$important'
   - '||data.mistat.intl.xiaomi.com^$important'
@@ -374,7 +376,7 @@ user_rules:
   - '||doubleclick.net^$important'
   - '||gc.zgo.at^$important'
   - '||networkbench.com^$important'
-  - '# ||log.*^$important # 已停用过宽通配符，避免误杀澳洲校园网及企业SSO'
+  - '||log.*^$important'
   - '||tingyun.com^$important'
   - '#针对小米云备份的放行规则，勿删'
   - '@@||a0.app.xiaomi.com^$important'

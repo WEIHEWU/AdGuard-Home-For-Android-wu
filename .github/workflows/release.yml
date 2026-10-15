@@ -21,21 +21,18 @@ jobs:
       - name: Create GitHub Release and Upload Packages
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v20261011-Beta1
-          name: "AdGuard Home For Android (wu修改版) 20261011-Beta1"
+          tag_name: v20261016-Beta1
+          name: "AdGuard Home For Android (wu修改版) 20261016-Beta1"
           body: |
-            ### AdGuard Home For Android (wu修改版) `20261011-Beta1`
+            ### AdGuard Home For Android (wu修改版) `20261016-Beta1`
 
-            提供 **🌏 海外版 (Overseas)** 与 **🇨🇳 中国国内版 (CN)** 两个定制版本，均已内置配套的 **AdGuard Home Manager (wu修改版)** 管理器应用。
+            提供 **🌏 海外版 (Overseas)** 与 **🇨🇳 中国国内版 (CN)** 两个定制版本，均已内置配套的 **AdGuard Home Manager (wu修改版) v2.24.4** 管理器应用。
 
-            #### 核心特性
-            - **V2 零内存分配内核级 SNI 过滤 + SolidJS V2 界面**：采用 `connbytes 1:3` 首包精准嗅探 + 原地零分配解析器 + `epoll` 事件队列，100% 拦截国内流氓应用的 HTTPDNS / IP 直连开屏广告，同时承载流量在内核层极速直通。
-            - **双模代理自适应引擎 (`ProxyConfig.sh` & `iptables.sh`)**：
-              - **模式一（独立 VPN App 用户）**：保持管理器内的 `PROXY_URL` 留空即可，自动绕过 Fake-IP (`198.18.0.0/15`) 与 Sing-box/Clash TUN (`172.19.0.0/16`)，并随 `tun*` 虚拟网卡开关（6 秒防抖）自动切换乐观缓存并冲洗旧 DNS 缓存；
-              - **模式二（Box / Clash / Mihomo 订阅链接用户）**：在管理器设置中填入 `PROXY_URL` 订阅链接并保存，自动将订阅地址与最新随机端口 (`127.0.0.1:redir_port`) 同步写入代理配置并温和刷新服务（去除原版粗暴开关飞行模式导致的断流问题）。
-            - **临时 Root 与软重启完美适配**：搭载 3 次启动重试安全熔断与 `/proc/$pid/comm` 进程名二次校验，彻底杜绝软重启后 PID 复用导致的规则失效或开机死循环。
-            - **极致低功耗减法**：查询日志全内存运行 (`file_enabled: false`)，关闭冗余 `whois/arp/hosts` 扫描与本地 `dnssec` 开销，60 秒轻量级 `O(1)` 守护，完全不影响手机 Deep Sleep（深度休眠）。
+            #### 🆕 20261016-Beta1 更新亮点
+            - **修复 Google 广告侧漏 Bug，重回 100% 拦截率**：彻底移除过度放行的 `@@||google.com^$important` 整域通配规则，改为精确放行 GMS/Play 核心接口（`play.google.com`、`accounts.google.com` 等），彻底消灭 `ads.google.com` 与 `adservice.google.com` 广告漏网；
+            - **同步上游最新 `v2026-10-15` 核心二进制**：升级内核至包含 PR #18（修复 NFQUEUE 异常断连后的事件驱动自动重连机制，防止 SNI 队列意外退出）；
+            - **内置管理器升级至 `v2.24.4 (wu修改版)`**：修复新版 AdGuard Home 加密设置报错、适配 Android 16/17+ 本地网络权限、新增应用内多语言切换支持。
           files: |
-            releases/AdGuard_Home_For_Android_20261011_Beta1_Overseas_wu修改版.zip
-            releases/AdGuard_Home_For_Android_20261011_Beta1_CN_wu修改版.zip
+            releases/AdGuard_Home_For_Android_20261016_Beta1_Overseas_wu修改版.zip
+            releases/AdGuard_Home_For_Android_20261016_Beta1_CN_wu修改版.zip
             releases/AdGuardHomeManager_wu修改版.apk
