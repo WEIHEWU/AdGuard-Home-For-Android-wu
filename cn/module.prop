@@ -1,6 +1,6 @@
 id=AdGuardHome
 name=AdGuard Home For Android (国内版·wu修改版)
-version=20261016-Beta1-wu修改版
-versionCode=2026101601
+version=20261016-Beta2-wu修改版
+versionCode=2026101602
 author=春梦无痕（国内版·wu修改版）
 description=AdGuard Home for Android（国内版·wu修改版）本地运行模块，支持在管理器填写订阅链接或独立 VPN App 双模式，提供全设备级 DNS/SNI 去广告与隐私保护。

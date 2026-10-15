@@ -21,18 +21,21 @@ jobs:
       - name: Create GitHub Release and Upload Packages
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v20261016-Beta1
-          name: "AdGuard Home For Android (wu修改版) 20261016-Beta1"
+          tag_name: v20261016-Beta2
+          name: "AdGuard Home For Android (wu修改版) 20261016-Beta2"
           body: |
-            ### AdGuard Home For Android (wu修改版) `20261016-Beta1`
+            ### AdGuard Home For Android (wu修改版) `20261016-Beta2`
 
-            提供 **🌏 海外版 (Overseas)** 与 **🇨🇳 中国国内版 (CN)** 两个定制版本，均已内置配套的 **AdGuard Home Manager (wu修改版) v2.24.4** 管理器应用。
+            提供 **🌏 海外版 (Overseas)** 与 **🇨🇳 中国国内版 (CN)** 两个定制版本，均已内置最新配套的 **AdGuard Home Manager (wu修改版) v2.24.5** 管理器应用。
 
-            #### 🆕 20261016-Beta1 更新亮点
+            #### 🆕 20261016-Beta2 更新亮点
+            - **内置管理器升级至 `v2.24.5 (wu修改版)`**：
+              - **点击「拦截 / 放行」域名自动添加 `$important`**：查询日志中点击「拦截域名」时自动生成 `||domain^$important`，防止手动拦截被 `allow.txt` 等白名单订阅覆盖失效；手动添加自定义规则弹窗默认开启「添加 `$important`」开关；
+              - **修复切换拦截/放行时误删子域名规则的隐患**：改为精确匹配目标域名规则，不再因子串匹配误删同根子域名规则或注释；
+              - 包含 `v2.24.4` 全部特性（新版加密设置修复、Android 16/17+ 本地网络权限适配、应用内多语言切换支持）。
             - **修复 Google 广告侧漏 Bug，重回 100% 拦截率**：彻底移除过度放行的 `@@||google.com^$important` 整域通配规则，改为精确放行 GMS/Play 核心接口（`play.google.com`、`accounts.google.com` 等），彻底消灭 `ads.google.com` 与 `adservice.google.com` 广告漏网；
-            - **同步上游最新 `v2026-10-15` 核心二进制**：升级内核至包含 PR #18（修复 NFQUEUE 异常断连后的事件驱动自动重连机制，防止 SNI 队列意外退出）；
-            - **内置管理器升级至 `v2.24.4 (wu修改版)`**：修复新版 AdGuard Home 加密设置报错、适配 Android 16/17+ 本地网络权限、新增应用内多语言切换支持。
+            - **同步上游最新 `v2026-10-15` 核心二进制**：升级内核至包含 PR #18（修复 NFQUEUE 异常断连后的事件驱动自动重连机制，防止 SNI 队列意外退出）。
           files: |
-            releases/AdGuard_Home_For_Android_20261016_Beta1_Overseas_wu修改版.zip
-            releases/AdGuard_Home_For_Android_20261016_Beta1_CN_wu修改版.zip
+            releases/AdGuard_Home_For_Android_20261016_Beta2_Overseas_wu修改版.zip
+            releases/AdGuard_Home_For_Android_20261016_Beta2_CN_wu修改版.zip
             releases/AdGuardHomeManager_wu修改版.apk
