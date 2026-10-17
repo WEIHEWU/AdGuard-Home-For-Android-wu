@@ -21,25 +21,26 @@ jobs:
       - name: Create GitHub Release and Upload Packages
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v20261017-Beta1
-          name: "AdGuard Home For Android 20261017-Beta1"
+          tag_name: v20261018-Beta1
+          name: "AdGuard Home For Android 20261018-Beta1"
           body: |
-            ### AdGuard Home For Android `20261017-Beta1`
+            ### AdGuard Home For Android `20261018-Beta1`
 
-            提供 **🌏 海外版 (Overseas)** 与 **🇨🇳 中国国内版 (CN)** 两个定制版本，均已内置最新配套的 **AdGuard Home Manager v2.24.6** 管理器应用。
+            提供 **🌏 海外版 (Overseas)** 与 **🇨🇳 中国国内版 (CN)** 两个定制版本，均已内置最新配套的 **AdGuard Home Manager v2.24.7** 管理器应用。
 
-            #### 🆕 20261017-Beta1 更新亮点
-            - **防火墙公共 DNS 防绕过与上游自锁修复 (`iptables.sh`)**：
-              - 动态提取 `AdGuardHome.yaml` 中的 `bootstrap_dns` 与 `upstream_dns` IP，仅对 `AdGuardHome` 自身（`--uid-owner 0`）精准豁免 `RETURN`，任何普通 App 硬编码公共 DNS（如 `223.5.5.5`、`119.29.29.29`、`8.8.8.8`）发起的请求仍强制劫持进入本地端口，彻底解决公共 DNS 广告漏网问题；
-              - 新增独立 `ADGUARD_DOT` 链，对加密 DNS 端口（`853, 784, 8853`）执行智能防绕过拦截，同时自动豁免 `uid 0` 与 `tun+` / `wg+` 虚拟网卡，完美兼容 VPN 节点通信；
-              - 海外版 `AdGuardHome.yaml` 上游切换为纯 IP DoH（`https://8.8.8.8/dns-query`、`https://9.9.9.9/dns-query`），消除 `dns.google` / `dns.quad9.net` 的 Bootstrap 死锁与 `AGH_SNI` 误杀。
-            - **开机动态合成系统 + 用户 CA 证书包 (`service.sh`)**：
-              - 启动时自动聚合系统证书（`/system/etc/security/cacerts`、`/apex/com.android.conscrypt/cacerts`）与用户安装证书（`/data/misc/keychain/cacerts-added`）生成 `cacerts.pem` 并注入 `SSL_CERT_FILE`，避免 Go 核心在部分精简 ROM 上因证书链缺失导致 DoH 握手或规则订阅拉取失败。
-            - **内置管理器升级至 `v2.24.6`**：
-              - 新增 **模块运行状态与自检**：一键检测 AGH 进程、`ADGUARD` / `AGH_SNI` / `ADGUARD_DOT` 防火墙链挂载状态，支持直接查看/清空 `service.log` 与 `agh_stdout.log`，并支持免重启一键重载防火墙规则；
-              - 新增 **清理应用开屏广告缓存**：随时触发 `NoAdsService.sh` 清理并锁定毒瘤 App 本地的开屏广告目录；
-              - 新增 **恢复默认自定义规则**：读取内置 `default_user_rules.txt` 出厂规则库，提供「智能补全（保留个人规则）」与「完全重置」两种恢复模式。
+            #### 🆕 20261018-Beta1 更新亮点
+            - **低功耗前台应用放行白名单 (`iptables.sh`)**：
+              - 采用极轻量屏幕交互感应（`cmd power is-interactive`）：当手机处于息屏/口袋中时直接提前返回并重置为正常拦截，绝不打扰 CPU 深度休眠（Deep Sleep），0% 息屏功耗；
+              - 亮屏状态下动态感应当前聚焦应用（`cmd activity top-activity`），若处于放行名单（`/data/adb/agh/app-allow.txt`），自动无缝暂停 DNS 过滤（`/control/protection false`），离开或息屏后毫秒级恢复；
+              - 完美解决特定银行、企业内网、特定手游等敏感 App 与去广告过滤冲突的问题。
+            - **15 天图表统计轻量持久化 (`datachart.txt`)**：
+              - 每小时采样聚合一次 DNS 查询与拦截增量数据，零高频写盘磨损；
+              - 自动维护最近 15 天时间序列数据并滚动淘汰过期数据，为管理器长期图表分析提供数据支撑。
+            - **内置管理器升级至 `v2.24.7`**：
+              - **应用放行名单管理**：支持从第三方应用列表智能勾选或手动输入包名，一键保存至模块放行名单；
+              - **首页数据概览样式随心切换**：支持「平滑折线图」、「每小时柱状图」、「数字化概览卡片」三种样式，支持在首页与设置中自由切换；
+              - **全局弹窗重构与毛玻璃遮罩**：核心操作与维护弹窗引入 8px 实时模糊背景遮罩，配合 Bouncing 阻尼回弹动效与触感反馈。
           files: |
-            releases/AdGuard_Home_For_Android_20261017_Beta1_Overseas.zip
-            releases/AdGuard_Home_For_Android_20261017_Beta1_CN.zip
+            releases/AdGuard_Home_For_Android_20261018_Beta1_Overseas.zip
+            releases/AdGuard_Home_For_Android_20261018_Beta1_CN.zip
             releases/AdGuardHomeManager.apk

@@ -249,6 +249,7 @@ clean_all_rules() {
     ip6tables -w 2 -t filter -F AGH_SNI 2>/dev/null
     ip6tables -w 2 -t filter -X AGH_SNI 2>/dev/null
     clean_hotspot_rules
+    rm -f "$AGH_DIR/app_pause_active" 2>/dev/null
 }
 
 # 9. 刷新网络状态（温和刷新，绝不开关飞行模式打断 VPN）
@@ -348,6 +349,97 @@ check_vpn_and_cache() {
     fi
 }
 
+# 12. 前台放行名单应用动态感应（亮屏且名单应用在前台时自动暂停过滤，离开或息屏后恢复；0 功耗）
+app_pause_last=""
+check_app_allowlist() {
+    # 若放行名单文件不存在或为空，直接快速返回
+    [ -s "$AGH_DIR/app-allow.txt" ] || return 0
+
+    # 屏幕状态探测：若息屏（手机处于休眠/口袋中），立即退出并确保恢复过滤，绝不唤醒 CPU
+    is_screen_on="0"
+    if cmd power is-interactive 2>/dev/null | grep -q 'true'; then
+        is_screen_on="1"
+    elif dumpsys power 2>/dev/null | grep -qE 'mHoldingDisplaySuspendBlocker=true|mHoldingDisplay=true|mWakefulness=Awake'; then
+        is_screen_on="1"
+    fi
+
+    if [ "$is_screen_on" = "0" ]; then
+        if [ -f "$AGH_DIR/app_pause_active" ]; then
+            http_port=$(sed -n 's/^[[:space:]]*address:[[:space:]]*127\.0\.0\.1:\([0-9]*\).*/\1/p' "$BIN_DIR/AdGuardHome.yaml" 2>/dev/null | head -n 1)
+            [ -n "$http_port" ] && curl -s -u root:root -X POST "http://127.0.0.1:$http_port/control/protection" -H "Content-Type: application/json" -d '{"enabled":true}' >/dev/null 2>&1
+            rm -f "$AGH_DIR/app_pause_active" 2>/dev/null
+            app_pause_last=""
+        fi
+        return 0
+    fi
+
+    # 亮屏状态：获取当前前台聚焦的应用包名
+    current=$(cmd activity top-activity 2>/dev/null | awk -F'[{/ ]' '/ACTIVITY/ {print $3}' | head -n 1)
+    [ -z "$current" ] && current=$(dumpsys activity activities 2>/dev/null | awk '/ResumedActivity/ {print $4}' | cut -d/ -f1 | head -n 1)
+    [ -z "$current" ] && current=$(dumpsys window 2>/dev/null | awk -F'[{/ ]' '/visible=true topActivity=ComponentInfo/ {print $3}' | head -n 1)
+
+    [ "$current" = "$app_pause_last" ] && return 0
+    app_pause_last="$current"
+
+    http_port=$(sed -n 's/^[[:space:]]*address:[[:space:]]*127\.0\.0\.1:\([0-9]*\).*/\1/p' "$BIN_DIR/AdGuardHome.yaml" 2>/dev/null | head -n 1)
+    [ -z "$http_port" ] && return 0
+
+    if [ -n "$current" ] && grep -qxF "$current" "$AGH_DIR/app-allow.txt" 2>/dev/null; then
+        if [ ! -f "$AGH_DIR/app_pause_active" ]; then
+            curl -s -u root:root -X POST "http://127.0.0.1:$http_port/control/protection" -H "Content-Type: application/json" -d '{"enabled":false}' >/dev/null 2>&1
+            echo "1" > "$AGH_DIR/app_pause_active"
+            echo "$(date '+%F %T') [APP-ALLOW] 检测到放行应用在前台 ($current)，已自动暂停 DNS 过滤" >> "$MAIN_LOG"
+        fi
+    else
+        if [ -f "$AGH_DIR/app_pause_active" ]; then
+            curl -s -u root:root -X POST "http://127.0.0.1:$http_port/control/protection" -H "Content-Type: application/json" -d '{"enabled":true}' >/dev/null 2>&1
+            rm -f "$AGH_DIR/app_pause_active" 2>/dev/null
+            echo "$(date '+%F %T') [APP-ALLOW] 放行应用已离开前台，已自动恢复 DNS 过滤" >> "$MAIN_LOG"
+        fi
+    fi
+}
+
+# 13. 15 天图表统计轻量持久化（每小时聚合 1 次，零写盘损耗）
+sample_datachart() {
+    http_port=$(sed -n 's/^[[:space:]]*address:[[:space:]]*127\.0\.0\.1:\([0-9]*\).*/\1/p' "$BIN_DIR/AdGuardHome.yaml" 2>/dev/null | head -n 1)
+    [ -z "$http_port" ] && return 0
+
+    stats_json=$(curl -s -u root:root "http://127.0.0.1:$http_port/control/stats" 2>/dev/null)
+    q=$(echo "$stats_json" | sed -n 's/.*"num_dns_queries":[[:space:]]*\([0-9]*\).*/\1/p')
+    b=$(echo "$stats_json" | sed -n 's/.*"num_blocked_filtering":[[:space:]]*\([0-9]*\).*/\1/p')
+    [ -n "$q" ] && [ -n "$b" ] || return 0
+
+    now=$(date +%s)
+    hour=$((now / 3600 * 3600))
+    prev_q=$(cat "$AGH_DIR/datachart_q" 2>/dev/null)
+    prev_b=$(cat "$AGH_DIR/datachart_b" 2>/dev/null)
+    dq=0; db=0
+    if [ -n "$prev_q" ] && [ -n "$prev_b" ]; then
+        if [ "$q" -ge "$prev_q" ]; then
+            dq=$((q - prev_q))
+            db=$((b - prev_b))
+        else
+            dq=$q; db=$b
+        fi
+    fi
+    echo "$q" > "$AGH_DIR/datachart_q"
+    echo "$b" > "$AGH_DIR/datachart_b"
+
+    if [ $((dq + db)) -gt 0 ]; then
+        awk -v h="$hour" -v dq="$dq" -v db="$db" '
+            $1 == h { $2 += dq; $3 += db; found = 1 }
+            { print }
+            END { if (!found) print h, dq, db }
+        ' "$AGH_DIR/datachart.txt" 2>/dev/null | sort -n > "$AGH_DIR/datachart.txt.tmp" && mv -f "$AGH_DIR/datachart.txt.tmp" "$AGH_DIR/datachart.txt"
+    fi
+
+    # 清除 15 天前的数据
+    cutoff=$((now - 15 * 86400))
+    if [ -f "$AGH_DIR/datachart.txt" ]; then
+        awk -v c="$cutoff" '$1 >= c' "$AGH_DIR/datachart.txt" > "$AGH_DIR/datachart.txt.tmp" && mv -f "$AGH_DIR/datachart.txt.tmp" "$AGH_DIR/datachart.txt"
+    fi
+}
+
 # --- 初始化执行 ---
 clean_legacy_conflicts
 clean_hotspot_rules
@@ -358,7 +450,7 @@ if preflight_check; then
     refresh_network
 fi
 
-# --- 轻量化守护循环：秒级感应 VPN 状态切换，60 秒维持规则与心跳 ---
+# --- 轻量化守护循环：秒级感应 VPN 与应用白名单，60 秒维持规则与图表采样 ---
 loop_cnt=0
 while true; do
     sleep 3
@@ -373,6 +465,9 @@ while true; do
     # 极速秒级检查 VPN 状态切换（0% CPU）
     check_vpn_and_cache
 
+    # 亮屏前台放行应用状态感应（0% 息屏占用）
+    check_app_allowlist
+
     loop_cnt=$((loop_cnt + 3))
     if [ "$loop_cnt" -ge 60 ]; then
         loop_cnt=0
@@ -381,6 +476,9 @@ while true; do
         if ! agh_running; then
             start_agh
         fi
+
+        # 每 60 秒轻量采样图表数据到 datachart.txt
+        sample_datachart
 
         # 检查 iptables 重定向规则是否被系统 netd 冲掉，若是则自动修复
         if ! iptables -w 2 -t nat -C ADGUARD -p udp --dport 53 -j REDIRECT --to-ports "$redir_port" 2>/dev/null; then
