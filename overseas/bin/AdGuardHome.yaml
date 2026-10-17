@@ -32,8 +32,8 @@ dns:
   upstream_dns:
     # --- 澳洲本土与大洋洲顶级域名优先分流：走 Cloudflare / Google / Quad9 澳洲 Anycast 超低延迟节点 ---
     - '[/au/]https://1.1.1.1/dns-query'
-    - '[/au/]https://dns.google/dns-query'
-    - '[/au/]https://dns.quad9.net/dns-query'
+    - '[/au/]https://8.8.8.8/dns-query'
+    - '[/au/]https://9.9.9.9/dns-query'
     # --- 中国大陆常用网站与特定服务：走阿里DNS / 腾讯DNSPod，精准分配国内最优CDN与加速节点 ---
     - '[/cn/edu.cn/gov.cn/]https://223.5.5.5/dns-query'
     - '[/qq.com/weixin.com/tencent.com/qpic.cn/qlogo.cn/]https://1.12.12.12/dns-query'
@@ -48,8 +48,8 @@ dns:
     # --- 澳洲本地及全球其它网站（Gmail/Google全家桶/澳洲网银/本地媒体等）：走澳洲本地超低延迟 Anycast DNS ---
     - https://1.1.1.1/dns-query
     - https://1.0.0.1/dns-query
-    - https://dns.google/dns-query
-    - https://dns.quad9.net/dns-query
+    - https://8.8.8.8/dns-query
+    - https://9.9.9.9/dns-query
   upstream_dns_file: ""
   bootstrap_dns:
     - 1.1.1.1
@@ -61,8 +61,9 @@ dns:
   fallback_dns:
     - https://1.1.1.1/dns-query
     - https://1.0.0.1/dns-query
-    - https://dns.google/dns-query
-    - https://dns.quad9.net/dns-query
+    - https://8.8.8.8/dns-query
+    - https://8.8.4.4/dns-query
+    - https://9.9.9.9/dns-query
   upstream_mode: parallel
   fastest_timeout: 1s
   allowed_clients: []

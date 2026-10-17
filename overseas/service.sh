@@ -51,8 +51,41 @@ agh_running() {
     pidof AdGuardHome >/dev/null 2>&1
 }
 
+# 构建 Android 系统与 APEX 根证书合并包（兼容 Android 14~17 Conscrypt 证书存储与用户自装证书）
+CA_BUNDLE="$BIN_DIR/cacerts.pem"
+build_ca_bundle() {
+    temp="$CA_BUNDLE.tmp"
+    if [ -s "$CA_BUNDLE" ]; then
+        for cert_dir in /system/etc/security/cacerts /apex/com.android.conscrypt/cacerts /apex/com.android.conscrypt/etc/security/cacerts /data/misc/keychain/cacerts-added; do
+            [ -d "$cert_dir" ] || continue
+            bundle_mtime=$(stat -c %Y "$CA_BUNDLE" 2>/dev/null)
+            source_mtime=$(stat -c %Y "$cert_dir" 2>/dev/null)
+            if [ -n "$bundle_mtime" ] && [ -n "$source_mtime" ] && [ "$bundle_mtime" -ge "$source_mtime" ]; then
+                return 0
+            fi
+        done
+    fi
+    rm -f "$temp"
+    for cert_dir in /system/etc/security/cacerts /apex/com.android.conscrypt/cacerts /apex/com.android.conscrypt/etc/security/cacerts /data/misc/keychain/cacerts-added; do
+        [ -d "$cert_dir" ] || continue
+        for cert in "$cert_dir"/*; do
+            [ -f "$cert" ] || continue
+            grep -q '^-----BEGIN CERTIFICATE-----' "$cert" 2>/dev/null || continue
+            cat "$cert" >> "$temp" 2>/dev/null
+            echo "" >> "$temp"
+        done
+    done
+    if [ -s "$temp" ]; then
+        chmod 600 "$temp" 2>/dev/null
+        mv -f "$temp" "$CA_BUNDLE" 2>/dev/null
+    else
+        rm -f "$temp" 2>/dev/null
+    fi
+}
+
 # 动态端口随机化与安全启动（带 3 次重试熔断防护，杜绝卡米死循环）
 if ! agh_running; then
+    build_ca_bundle
     MAX_TRIES=3
     try_count=0
     while [ "$try_count" -lt "$MAX_TRIES" ]; do
@@ -74,6 +107,7 @@ if ! agh_running; then
 
         # 启动AdGuardHome
         export SSL_CERT_DIR="/system/etc/security/cacerts/"
+        [ -s "$CA_BUNDLE" ] && export SSL_CERT_FILE="$CA_BUNDLE"
         "$BIN_DIR/AdGuardHome" --no-check-update >/dev/null 2>&1 &
         echo "$!" > "$BIN_DIR/AdGuardHome.pid"
 

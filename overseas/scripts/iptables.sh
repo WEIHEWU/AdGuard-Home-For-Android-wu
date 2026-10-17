@@ -46,6 +46,7 @@ start_agh() {
         esac
     } >> "$MAIN_LOG"
     export SSL_CERT_DIR="/system/etc/security/cacerts/"
+    [ -s "$BIN_DIR/cacerts.pem" ] && export SSL_CERT_FILE="$BIN_DIR/cacerts.pem"
     "$BIN_DIR/AdGuardHome" --no-check-update &
     echo "$!" > "$PID_FILE"
 }
@@ -60,6 +61,28 @@ clean_legacy_conflicts() {
     while ip6tables -w 2 -D OUTPUT -p tcp --dport 853 -j REJECT 2>/dev/null; do :; done
     while ip6tables -w 2 -D OUTPUT -p udp --dport 853 -j REJECT 2>/dev/null; do :; done
     while ip6tables -w 2 -D OUTPUT -p udp --dport 443 -j REJECT 2>/dev/null; do :; done
+}
+
+# 提取配置文件中的上游与 Bootstrap DNS IP（仅对 uid 0 放行，防核心自回环死循环，同时拦截普通 App 直连公共 DNS）
+dns_bypass_addrs() {
+    [ -s "$BIN_DIR/AdGuardHome.yaml" ] || return 0
+    awk '
+        /^[a-zA-Z_]+:/ { section = ($0 ~ /^dns:/) ? "dns" : "" }
+        section == "dns" {
+            line = $0
+            gsub(/[^0-9a-fA-F:.]+/, " ", line)
+            n = split(line, a, /[[:space:]]+/)
+            for (i = 1; i <= n; i++) {
+                tok = a[i]
+                if (tok ~ /^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+:[0-9]+$/) sub(/:[0-9]+$/, "", tok)
+                if (tok ~ /^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$/) {
+                    if (tok != "127.0.0.1" && tok != "127.0.0.0" && tok != "0.0.0.0" && !seen[tok]++) print tok
+                } else if (tok ~ /^[0-9a-fA-F:]+:[0-9a-fA-F:]+$/) {
+                    if (tok != "::1" && tok != "::" && !seen[tok]++) print tok
+                }
+            }
+        }
+    ' "$BIN_DIR/AdGuardHome.yaml" 2>/dev/null
 }
 
 # 5. 精准 SNI 队列规则（首包严密盘查，承载数据流秒级直通）
@@ -125,12 +148,50 @@ rebuild_sni() {
         ip6tables -w 2 -t filter -I OUTPUT 1 -j AGH_SNI
 }
 
+# 5b. DoT / DoQ 加密 DNS 端口（853, 784, 8853）智能防绕过链
+# 豁免 AdGuardHome 自身 (uid 0) 与 VPN 虚拟网卡 (tun+ / wg+)，防止外部 App 私自走 853 绕过本地过滤
+rebuild_dot_guard() {
+    while iptables -w 2 -t filter -D OUTPUT -j ADGUARD_DOT 2>/dev/null; do :; done
+    iptables -w 2 -t filter -F ADGUARD_DOT 2>/dev/null
+    iptables -w 2 -t filter -X ADGUARD_DOT 2>/dev/null
+    while ip6tables -w 2 -t filter -D OUTPUT -j ADGUARD_DOT 2>/dev/null; do :; done
+    ip6tables -w 2 -t filter -F ADGUARD_DOT 2>/dev/null
+    ip6tables -w 2 -t filter -X ADGUARD_DOT 2>/dev/null
+
+    iptables -w 2 -t filter -N ADGUARD_DOT 2>/dev/null
+    iptables -w 2 -t filter -A ADGUARD_DOT -m owner --uid-owner 0 -j RETURN
+    iptables -w 2 -t filter -A ADGUARD_DOT -o tun+ -j RETURN
+    iptables -w 2 -t filter -A ADGUARD_DOT -o wg+ -j RETURN
+    iptables -w 2 -t filter -A ADGUARD_DOT -p tcp -m multiport --dports 853,784,8853 -j REJECT --reject-with tcp-reset 2>/dev/null || \
+        iptables -w 2 -t filter -A ADGUARD_DOT -p tcp -m multiport --dports 853,784,8853 -j DROP 2>/dev/null
+    iptables -w 2 -t filter -A ADGUARD_DOT -p udp -m multiport --dports 853,784,8853 -j REJECT --reject-with icmp-port-unreachable 2>/dev/null || \
+        iptables -w 2 -t filter -A ADGUARD_DOT -p udp -m multiport --dports 853,784,8853 -j DROP 2>/dev/null
+    iptables -w 2 -t filter -I OUTPUT 1 -j ADGUARD_DOT
+
+    ip6tables -w 2 -t filter -N ADGUARD_DOT 2>/dev/null
+    ip6tables -w 2 -t filter -A ADGUARD_DOT -m owner --uid-owner 0 -j RETURN
+    ip6tables -w 2 -t filter -A ADGUARD_DOT -o tun+ -j RETURN
+    ip6tables -w 2 -t filter -A ADGUARD_DOT -o wg+ -j RETURN
+    ip6tables -w 2 -t filter -A ADGUARD_DOT -p tcp -m multiport --dports 853,784,8853 -j REJECT --reject-with tcp-reset 2>/dev/null || \
+        ip6tables -w 2 -t filter -A ADGUARD_DOT -p tcp -m multiport --dports 853,784,8853 -j DROP 2>/dev/null
+    ip6tables -w 2 -t filter -A ADGUARD_DOT -p udp -m multiport --dports 853,784,8853 -j REJECT --reject-with icmp6-port-unreachable 2>/dev/null || \
+        ip6tables -w 2 -t filter -A ADGUARD_DOT -p udp -m multiport --dports 853,784,8853 -j DROP 2>/dev/null
+    ip6tables -w 2 -t filter -I OUTPUT 1 -j ADGUARD_DOT
+}
+
 # 6. 应用高效 DNS 重定向规则
 apply_rules() {
     # 建立 IPv4 DNS 重定向
     iptables -w 2 -t nat -N ADGUARD 2>/dev/null
     iptables -w 2 -t nat -C OUTPUT -j ADGUARD 2>/dev/null || iptables -w 2 -t nat -I OUTPUT 1 -j ADGUARD
     iptables -w 2 -t nat -F ADGUARD
+    # 精准豁免 AdGuardHome 自身 (uid 0) 访问 Bootstrap / 上游 DNS IP，防止回环自锁且绝不放跑普通 App 硬编码公共 DNS
+    for addr in $(dns_bypass_addrs); do
+        case "$addr" in
+            *:*) ;;
+            *) iptables -w 2 -t nat -A ADGUARD -m owner --uid-owner 0 -d "$addr" -j RETURN 2>/dev/null ;;
+        esac
+    done
     # 排除 Fake-IP (198.18.0.0/15) 与 Sing-box/Clash TUN (172.19.0.0/16)，确保代理软件的虚拟域名分流直接直通
     iptables -w 2 -t nat -A ADGUARD -d 198.18.0.0/15 -j RETURN 2>/dev/null
     iptables -w 2 -t nat -A ADGUARD -d 172.19.0.0/16 -j RETURN 2>/dev/null
@@ -141,6 +202,11 @@ apply_rules() {
     ip6tables -w 2 -N ADGUARD6 2>/dev/null
     ip6tables -w 2 -C OUTPUT -j ADGUARD6 2>/dev/null || ip6tables -w 2 -I OUTPUT 1 -j ADGUARD6
     ip6tables -w 2 -F ADGUARD6
+    for addr in $(dns_bypass_addrs); do
+        case "$addr" in
+            *:*) ip6tables -w 2 -A ADGUARD6 -m owner --uid-owner 0 -d "$addr" -j RETURN 2>/dev/null ;;
+        esac
+    done
     if ! ip6tables -w 2 -A ADGUARD6 -p udp --dport 53 -j REJECT --reject-with icmp6-port-unreachable 2>/dev/null; then
         ip6tables -w 2 -A ADGUARD6 -p udp --dport 53 -j DROP 2>/dev/null
     fi
@@ -148,6 +214,7 @@ apply_rules() {
         ip6tables -w 2 -A ADGUARD6 -p tcp --dport 53 -j DROP 2>/dev/null
     fi
 
+    rebuild_dot_guard
     rebuild_sni
 }
 
@@ -161,7 +228,7 @@ clean_hotspot_rules() {
     while iptables -w 2 -t nat -D PREROUTING -p tcp --dport 53 -j REDIRECT --to-ports "$redir_port" 2>/dev/null; do :; done
 }
 
-# 8. 彻底清理所有 DNS / SNI 接管规则（原子化干净还原原生网络）
+# 8. 彻底清理所有 DNS / DoT / SNI 接管规则（原子化干净还原原生网络）
 clean_all_rules() {
     while iptables -w 2 -t nat -D OUTPUT -j ADGUARD 2>/dev/null; do :; done
     iptables -w 2 -t nat -F ADGUARD 2>/dev/null
@@ -169,12 +236,18 @@ clean_all_rules() {
     while ip6tables -w 2 -D OUTPUT -j ADGUARD6 2>/dev/null; do :; done
     ip6tables -w 2 -F ADGUARD6 2>/dev/null
     ip6tables -w 2 -X ADGUARD6 2>/dev/null
+    while iptables -w 2 -t filter -D OUTPUT -j ADGUARD_DOT 2>/dev/null; do :; done
+    iptables -w 2 -t filter -F ADGUARD_DOT 2>/dev/null
+    iptables -w 2 -t filter -X ADGUARD_DOT 2>/dev/null
+    while ip6tables -w 2 -t filter -D OUTPUT -j ADGUARD_DOT 2>/dev/null; do :; done
+    ip6tables -w 2 -t filter -F ADGUARD_DOT 2>/dev/null
+    ip6tables -w 2 -t filter -X ADGUARD_DOT 2>/dev/null
     while iptables -w 2 -t filter -D OUTPUT -j AGH_SNI 2>/dev/null; do :; done
     iptables -w 2 -t filter -F AGH_SNI 2>/dev/null
     iptables -w 2 -t filter -X AGH_SNI 2>/dev/null
     while ip6tables -w 2 -t filter -D OUTPUT -j AGH_SNI 2>/dev/null; do :; done
-    ip6tables -w 2 -F AGH_SNI 2>/dev/null
-    ip6tables -w 2 -X AGH_SNI 2>/dev/null
+    ip6tables -w 2 -t filter -F AGH_SNI 2>/dev/null
+    ip6tables -w 2 -t filter -X AGH_SNI 2>/dev/null
     clean_hotspot_rules
 }
 

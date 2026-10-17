@@ -21,21 +21,25 @@ jobs:
       - name: Create GitHub Release and Upload Packages
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v20261016-Beta2
-          name: "AdGuard Home For Android (wu修改版) 20261016-Beta2"
+          tag_name: v20261017-Beta1
+          name: "AdGuard Home For Android 20261017-Beta1"
           body: |
-            ### AdGuard Home For Android (wu修改版) `20261016-Beta2`
+            ### AdGuard Home For Android `20261017-Beta1`
 
-            提供 **🌏 海外版 (Overseas)** 与 **🇨🇳 中国国内版 (CN)** 两个定制版本，均已内置最新配套的 **AdGuard Home Manager (wu修改版) v2.24.5** 管理器应用。
+            提供 **🌏 海外版 (Overseas)** 与 **🇨🇳 中国国内版 (CN)** 两个定制版本，均已内置最新配套的 **AdGuard Home Manager v2.24.6** 管理器应用。
 
-            #### 🆕 20261016-Beta2 更新亮点
-            - **内置管理器升级至 `v2.24.5 (wu修改版)`**：
-              - **点击「拦截 / 放行」域名自动添加 `$important`**：查询日志中点击「拦截域名」时自动生成 `||domain^$important`，防止手动拦截被 `allow.txt` 等白名单订阅覆盖失效；手动添加自定义规则弹窗默认开启「添加 `$important`」开关；
-              - **修复切换拦截/放行时误删子域名规则的隐患**：改为精确匹配目标域名规则，不再因子串匹配误删同根子域名规则或注释；
-              - 包含 `v2.24.4` 全部特性（新版加密设置修复、Android 16/17+ 本地网络权限适配、应用内多语言切换支持）。
-            - **修复 Google 广告侧漏 Bug，重回 100% 拦截率**：彻底移除过度放行的 `@@||google.com^$important` 整域通配规则，改为精确放行 GMS/Play 核心接口（`play.google.com`、`accounts.google.com` 等），彻底消灭 `ads.google.com` 与 `adservice.google.com` 广告漏网；
-            - **同步上游最新 `v2026-10-15` 核心二进制**：升级内核至包含 PR #18（修复 NFQUEUE 异常断连后的事件驱动自动重连机制，防止 SNI 队列意外退出）。
+            #### 🆕 20261017-Beta1 更新亮点
+            - **防火墙公共 DNS 防绕过与上游自锁修复 (`iptables.sh`)**：
+              - 动态提取 `AdGuardHome.yaml` 中的 `bootstrap_dns` 与 `upstream_dns` IP，仅对 `AdGuardHome` 自身（`--uid-owner 0`）精准豁免 `RETURN`，任何普通 App 硬编码公共 DNS（如 `223.5.5.5`、`119.29.29.29`、`8.8.8.8`）发起的请求仍强制劫持进入本地端口，彻底解决公共 DNS 广告漏网问题；
+              - 新增独立 `ADGUARD_DOT` 链，对加密 DNS 端口（`853, 784, 8853`）执行智能防绕过拦截，同时自动豁免 `uid 0` 与 `tun+` / `wg+` 虚拟网卡，完美兼容 VPN 节点通信；
+              - 海外版 `AdGuardHome.yaml` 上游切换为纯 IP DoH（`https://8.8.8.8/dns-query`、`https://9.9.9.9/dns-query`），消除 `dns.google` / `dns.quad9.net` 的 Bootstrap 死锁与 `AGH_SNI` 误杀。
+            - **开机动态合成系统 + 用户 CA 证书包 (`service.sh`)**：
+              - 启动时自动聚合系统证书（`/system/etc/security/cacerts`、`/apex/com.android.conscrypt/cacerts`）与用户安装证书（`/data/misc/keychain/cacerts-added`）生成 `cacerts.pem` 并注入 `SSL_CERT_FILE`，避免 Go 核心在部分精简 ROM 上因证书链缺失导致 DoH 握手或规则订阅拉取失败。
+            - **内置管理器升级至 `v2.24.6`**：
+              - 新增 **模块运行状态与自检**：一键检测 AGH 进程、`ADGUARD` / `AGH_SNI` / `ADGUARD_DOT` 防火墙链挂载状态，支持直接查看/清空 `service.log` 与 `agh_stdout.log`，并支持免重启一键重载防火墙规则；
+              - 新增 **清理应用开屏广告缓存**：随时触发 `NoAdsService.sh` 清理并锁定毒瘤 App 本地的开屏广告目录；
+              - 新增 **恢复默认自定义规则**：读取内置 `default_user_rules.txt` 出厂规则库，提供「智能补全（保留个人规则）」与「完全重置」两种恢复模式。
           files: |
-            releases/AdGuard_Home_For_Android_20261016_Beta2_Overseas_wu修改版.zip
-            releases/AdGuard_Home_For_Android_20261016_Beta2_CN_wu修改版.zip
-            releases/AdGuardHomeManager_wu修改版.apk
+            releases/AdGuard_Home_For_Android_20261017_Beta1_Overseas.zip
+            releases/AdGuard_Home_For_Android_20261017_Beta1_CN.zip
+            releases/AdGuardHomeManager.apk
