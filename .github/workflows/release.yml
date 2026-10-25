@@ -21,26 +21,21 @@ jobs:
       - name: Create GitHub Release and Upload Packages
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v20261018-Beta1
-          name: "AdGuard Home For Android 20261018-Beta1"
+          tag_name: v20261026-Beta1
+          name: "AdGuard Home For Android 20261026-Beta1"
           body: |
-            ### AdGuard Home For Android `20261018-Beta1`
+            ### AdGuard Home For Android `20261026-Beta1`
 
             提供 **🌏 海外版 (Overseas)** 与 **🇨🇳 中国国内版 (CN)** 两个定制版本，均已内置最新配套的 **AdGuard Home Manager v2.24.7** 管理器应用。
 
-            #### 🆕 20261018-Beta1 更新亮点
-            - **低功耗前台应用放行白名单 (`iptables.sh`)**：
-              - 采用极轻量屏幕交互感应（`cmd power is-interactive`）：当手机处于息屏/口袋中时直接提前返回并重置为正常拦截，绝不打扰 CPU 深度休眠（Deep Sleep），0% 息屏功耗；
-              - 亮屏状态下动态感应当前聚焦应用（`cmd activity top-activity`），若处于放行名单（`/data/adb/agh/app-allow.txt`），自动无缝暂停 DNS 过滤（`/control/protection false`），离开或息屏后毫秒级恢复；
-              - 完美解决特定银行、企业内网、特定手游等敏感 App 与去广告过滤冲突的问题。
-            - **15 天图表统计轻量持久化 (`datachart.txt`)**：
-              - 每小时采样聚合一次 DNS 查询与拦截增量数据，零高频写盘磨损；
-              - 自动维护最近 15 天时间序列数据并滚动淘汰过期数据，为管理器长期图表分析提供数据支撑。
-            - **内置管理器升级至 `v2.24.7`**：
-              - **应用放行名单管理**：支持从第三方应用列表智能勾选或手动输入包名，一键保存至模块放行名单；
-              - **首页数据概览样式随心切换**：支持「平滑折线图」、「每小时柱状图」、「数字化概览卡片」三种样式，支持在首页与设置中自由切换；
-              - **全局弹窗重构与毛玻璃遮罩**：核心操作与维护弹窗引入 8px 实时模糊背景遮罩，配合 Bouncing 阻尼回弹动效与触感反馈。
+            #### 🆕 20261026-Beta1 更新亮点
+            - **彻底根治系统 `netd (uid 0)` 在公共 DNS 网络下绕过拦截的缺陷 (`service.sh` & `iptables.sh`)**：
+              - **专属用户组物理隔离 (`uid=0, gid=23333`)**：将 `AdGuardHome` 进程绑定至专属用户组 `gid=23333` 启动，与 Android 系统 DNS 守护进程 `netd` (`uid=0, gid=0`) 彻底划清界限；
+              - **四链同步精准豁免 (`--uid-owner 0 --gid-owner 23333`)**：在 `ADGUARD` (IPv4 53 重定向)、`ADGUARD6` (IPv6 53 阻断)、`ADGUARD_DOT` (853 加密 DNS 阻断) 与 `AGH_SNI` (NFQUEUE 嗅探) 四条链中仅豁免 `AdGuardHome` 自身进程，并附带 `! --dport 53` 兜底防护；
+              - **100% 拦截且永不死锁**：无论当前 Wi-Fi / 路由器 DNS 是否与上游 IP（如 `1.1.1.1`、`8.8.8.8`、`223.5.5.5`、`119.29.29.29`）重合，`netd` 发起的系统级 DNS 解析均 100% 强制进入 AdGuard Home，同时 AGH 自身的 Bootstrap 53 / DoH 443 请求直通无回环。
+            - **修复 Google 广告通过 `1e100.net` CNAME 白名单逃逸问题 (`AdGuardHome.yaml` & `default_user_rules.txt`)**：
+              - 移除过宽的 `@@||1e100.net^$important` 白名单规则，防止 `doubleclick.net`、`googleadservices.com`、`googlesyndication.com` 等 Google 广告域名利用 CNAME 指向 `*.1e100.net` 绕过拦截，同时完整保留 Google Play / GMS / Google Pay 精确白名单。
           files: |
-            releases/AdGuard_Home_For_Android_20261018_Beta1_Overseas.zip
-            releases/AdGuard_Home_For_Android_20261018_Beta1_CN.zip
+            releases/AdGuard_Home_For_Android_20261026_Beta1_Overseas.zip
+            releases/AdGuard_Home_For_Android_20261026_Beta1_CN.zip
             releases/AdGuardHomeManager.apk

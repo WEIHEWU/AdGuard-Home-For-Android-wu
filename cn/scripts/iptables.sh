@@ -13,6 +13,8 @@ AGH_DIR="/data/adb/agh"
 BIN_DIR="$AGH_DIR/bin"
 MAIN_LOG="$AGH_DIR/agh.log"
 PID_FILE="$BIN_DIR/AdGuardHome.pid"
+AGH_GID=23333
+export PATH="/data/adb/ksu/bin:/data/adb/ap/bin:/data/adb/magisk:$PATH"
 
 [ -f "$AGH_DIR/scripts/config.prop" ] && . "$AGH_DIR/scripts/config.prop"
 redir_port=${redir_port:-31587}
@@ -37,18 +39,41 @@ agh_running() {
     pidof AdGuardHome >/dev/null 2>&1
 }
 
-# 3. 启动 AdGuardHome
+# 检测当前 AdGuardHome 进程是否已绑定专属 GID 23333（与系统 netd [uid=0,gid=0] 物理隔离）
+agh_has_dedicated_gid() {
+    agh_pid=$(pidof AdGuardHome 2>/dev/null | awk '{print $1}')
+    [ -n "$agh_pid" ] && [ "$(awk '/^Gid:/ {print $2}' "/proc/$agh_pid/status" 2>/dev/null)" = "$AGH_GID" ]
+}
+
+# 3. 启动 AdGuardHome（以 uid=0, gid=23333 启动，保持完整 Root 权限同时与 netd 彻底隔离）
 start_agh() {
     {
         case "$(getprop persist.sys.locale 2>/dev/null)" in
-            zh*) echo "$(date '+%F %T') [INFO] AdGuardHome 进程未运行，正在启动..." ;;
-            *)   echo "$(date '+%F %T') [INFO] AdGuardHome process missing, starting..." ;;
+            zh*) echo "$(date '+%F %T') [INFO] 正在以专属用户组 (uid=0, gid=$AGH_GID) 启动 AdGuardHome..." ;;
+            *)   echo "$(date '+%F %T') [INFO] Starting AdGuardHome with dedicated group (uid=0, gid=$AGH_GID)..." ;;
         esac
     } >> "$MAIN_LOG"
     export SSL_CERT_DIR="/system/etc/security/cacerts/"
     [ -s "$BIN_DIR/cacerts.pem" ] && export SSL_CERT_FILE="$BIN_DIR/cacerts.pem"
-    "$BIN_DIR/AdGuardHome" --no-check-update &
-    echo "$!" > "$PID_FILE"
+    if command -v busybox >/dev/null 2>&1 && busybox chpst -u 0:$AGH_GID true 2>/dev/null; then
+        busybox chpst -u 0:$AGH_GID "$BIN_DIR/AdGuardHome" --no-check-update >/dev/null 2>&1 &
+        echo "$!" > "$PID_FILE"
+    elif command -v busybox >/dev/null 2>&1 && busybox setpriv --reuid=0 --regid=$AGH_GID --clear-groups true 2>/dev/null; then
+        busybox setpriv --reuid=0 --regid=$AGH_GID --clear-groups "$BIN_DIR/AdGuardHome" --no-check-update >/dev/null 2>&1 &
+        echo "$!" > "$PID_FILE"
+    elif command -v setpriv >/dev/null 2>&1 && setpriv --reuid=0 --regid=$AGH_GID --clear-groups true 2>/dev/null; then
+        setpriv --reuid=0 --regid=$AGH_GID --clear-groups "$BIN_DIR/AdGuardHome" --no-check-update >/dev/null 2>&1 &
+        echo "$!" > "$PID_FILE"
+    elif command -v chpst >/dev/null 2>&1 && chpst -u 0:$AGH_GID true 2>/dev/null; then
+        chpst -u 0:$AGH_GID "$BIN_DIR/AdGuardHome" --no-check-update >/dev/null 2>&1 &
+        echo "$!" > "$PID_FILE"
+    elif command -v su >/dev/null 2>&1 && su -g $AGH_GID -c true 2>/dev/null; then
+        su -g $AGH_GID -c "exec '$BIN_DIR/AdGuardHome' --no-check-update >/dev/null 2>&1" &
+        echo "$!" > "$PID_FILE"
+    else
+        "$BIN_DIR/AdGuardHome" --no-check-update >/dev/null 2>&1 &
+        echo "$!" > "$PID_FILE"
+    fi
 }
 
 # 4. 清理旧版本及冲突规则 (彻底杜绝粗暴封禁443/853导致VPN无法连接的问题)
@@ -106,6 +131,10 @@ rebuild_sni() {
     # --- IPv4 SNI 链配置 ---
     iptables -w 2 -t filter -N AGH_SNI 2>/dev/null
     iptables -w 2 -t filter -A AGH_SNI -o lo -j RETURN
+    # 豁免 AdGuardHome 自身进程 (uid 0 + gid 23333) 的出站 DoH 与规则订阅更新流量，免进 NFQUEUE 自嗅探
+    if agh_has_dedicated_gid; then
+        iptables -w 2 -t filter -A AGH_SNI -m owner --uid-owner 0 --gid-owner "$AGH_GID" -j RETURN 2>/dev/null
+    fi
     # 局域网私有网段与广播直接快速放行，并排除 Fake-IP (198.18.0.0/15) 保护代理流量
     for net in 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 169.254.0.0/16 198.18.0.0/15 224.0.0.0/4 240.0.0.0/4 0.0.0.0/8; do
         iptables -w 2 -t filter -A AGH_SNI -p tcp -m multiport --dports "$sni_ports" -d "$net" -j RETURN
@@ -130,6 +159,9 @@ rebuild_sni() {
     # --- IPv6 SNI 链配置 ---
     ip6tables -w 2 -t filter -N AGH_SNI 2>/dev/null
     ip6tables -w 2 -t filter -A AGH_SNI -o lo -j RETURN
+    if agh_has_dedicated_gid; then
+        ip6tables -w 2 -t filter -A AGH_SNI -m owner --uid-owner 0 --gid-owner "$AGH_GID" -j RETURN 2>/dev/null
+    fi
     for net in ::1/128 fc00::/7 fe80::/10 ff00::/8; do
         ip6tables -w 2 -t filter -A AGH_SNI -p tcp -m multiport --dports "$sni_ports" -d "$net" -j RETURN
     done
@@ -149,7 +181,7 @@ rebuild_sni() {
 }
 
 # 5b. DoT / DoQ 加密 DNS 端口（853, 784, 8853）智能防绕过链
-# 豁免 AdGuardHome 自身 (uid 0) 与 VPN 虚拟网卡 (tun+ / wg+)，防止外部 App 私自走 853 绕过本地过滤
+# 仅豁免 AdGuardHome 自身 (uid 0 + gid 23333) 与 VPN 虚拟网卡 (tun+ / wg+)，防止 netd (uid 0, gid 0) 或外部 App 走 853 绕过本地过滤
 rebuild_dot_guard() {
     while iptables -w 2 -t filter -D OUTPUT -j ADGUARD_DOT 2>/dev/null; do :; done
     iptables -w 2 -t filter -F ADGUARD_DOT 2>/dev/null
@@ -159,7 +191,9 @@ rebuild_dot_guard() {
     ip6tables -w 2 -t filter -X ADGUARD_DOT 2>/dev/null
 
     iptables -w 2 -t filter -N ADGUARD_DOT 2>/dev/null
-    iptables -w 2 -t filter -A ADGUARD_DOT -m owner --uid-owner 0 -j RETURN
+    if agh_has_dedicated_gid; then
+        iptables -w 2 -t filter -A ADGUARD_DOT -m owner --uid-owner 0 --gid-owner "$AGH_GID" -j RETURN 2>/dev/null
+    fi
     iptables -w 2 -t filter -A ADGUARD_DOT -o tun+ -j RETURN
     iptables -w 2 -t filter -A ADGUARD_DOT -o wg+ -j RETURN
     iptables -w 2 -t filter -A ADGUARD_DOT -p tcp -m multiport --dports 853,784,8853 -j REJECT --reject-with tcp-reset 2>/dev/null || \
@@ -169,7 +203,9 @@ rebuild_dot_guard() {
     iptables -w 2 -t filter -I OUTPUT 1 -j ADGUARD_DOT
 
     ip6tables -w 2 -t filter -N ADGUARD_DOT 2>/dev/null
-    ip6tables -w 2 -t filter -A ADGUARD_DOT -m owner --uid-owner 0 -j RETURN
+    if agh_has_dedicated_gid; then
+        ip6tables -w 2 -t filter -A ADGUARD_DOT -m owner --uid-owner 0 --gid-owner "$AGH_GID" -j RETURN 2>/dev/null
+    fi
     ip6tables -w 2 -t filter -A ADGUARD_DOT -o tun+ -j RETURN
     ip6tables -w 2 -t filter -A ADGUARD_DOT -o wg+ -j RETURN
     ip6tables -w 2 -t filter -A ADGUARD_DOT -p tcp -m multiport --dports 853,784,8853 -j REJECT --reject-with tcp-reset 2>/dev/null || \
@@ -185,13 +221,23 @@ apply_rules() {
     iptables -w 2 -t nat -N ADGUARD 2>/dev/null
     iptables -w 2 -t nat -C OUTPUT -j ADGUARD 2>/dev/null || iptables -w 2 -t nat -I OUTPUT 1 -j ADGUARD
     iptables -w 2 -t nat -F ADGUARD
-    # 精准豁免 AdGuardHome 自身 (uid 0) 访问 Bootstrap / 上游 DNS IP，防止回环自锁且绝不放跑普通 App 硬编码公共 DNS
-    for addr in $(dns_bypass_addrs); do
-        case "$addr" in
-            *:*) ;;
-            *) iptables -w 2 -t nat -A ADGUARD -m owner --uid-owner 0 -d "$addr" -j RETURN 2>/dev/null ;;
-        esac
-    done
+    # 【核心修复】：仅对绑定了专属 GID (23333) 的 AdGuardHome 自身进程放行，
+    # 彻底与系统 netd (uid 0, gid 0) 物理隔离！无论 WiFi DNS 是否与上游 IP (如 1.1.1.1 / 8.8.8.8 / 223.5.5.5) 撞车，
+    # netd 发起的 53 端口系统解析 100% 强制进入 AdGuardHome，同时 AGH 自身的 Bootstrap/上游请求永不自回环死锁！
+    if agh_has_dedicated_gid; then
+        iptables -w 2 -t nat -A ADGUARD -m owner --uid-owner 0 --gid-owner "$AGH_GID" -j RETURN 2>/dev/null
+    else
+        # 极端环境兜底：若 GID 未隔离，绝不对 uid 0 放行 53 端口，确保 netd 永不绕过
+        for addr in $(dns_bypass_addrs); do
+            case "$addr" in
+                *:*) ;;
+                *)
+                    iptables -w 2 -t nat -A ADGUARD -m owner --uid-owner 0 -d "$addr" -p udp ! --dport 53 -j RETURN 2>/dev/null
+                    iptables -w 2 -t nat -A ADGUARD -m owner --uid-owner 0 -d "$addr" -p tcp ! --dport 53 -j RETURN 2>/dev/null
+                    ;;
+            esac
+        done
+    fi
     # 排除 Fake-IP (198.18.0.0/15) 与 Sing-box/Clash TUN (172.19.0.0/16)，确保代理软件的虚拟域名分流直接直通
     iptables -w 2 -t nat -A ADGUARD -d 198.18.0.0/15 -j RETURN 2>/dev/null
     iptables -w 2 -t nat -A ADGUARD -d 172.19.0.0/16 -j RETURN 2>/dev/null
@@ -202,11 +248,18 @@ apply_rules() {
     ip6tables -w 2 -N ADGUARD6 2>/dev/null
     ip6tables -w 2 -C OUTPUT -j ADGUARD6 2>/dev/null || ip6tables -w 2 -I OUTPUT 1 -j ADGUARD6
     ip6tables -w 2 -F ADGUARD6
-    for addr in $(dns_bypass_addrs); do
-        case "$addr" in
-            *:*) ip6tables -w 2 -A ADGUARD6 -m owner --uid-owner 0 -d "$addr" -j RETURN 2>/dev/null ;;
-        esac
-    done
+    if agh_has_dedicated_gid; then
+        ip6tables -w 2 -A ADGUARD6 -m owner --uid-owner 0 --gid-owner "$AGH_GID" -j RETURN 2>/dev/null
+    else
+        for addr in $(dns_bypass_addrs); do
+            case "$addr" in
+                *:*)
+                    ip6tables -w 2 -A ADGUARD6 -m owner --uid-owner 0 -d "$addr" -p udp ! --dport 53 -j RETURN 2>/dev/null
+                    ip6tables -w 2 -A ADGUARD6 -m owner --uid-owner 0 -d "$addr" -p tcp ! --dport 53 -j RETURN 2>/dev/null
+                    ;;
+            esac
+        done
+    fi
     if ! ip6tables -w 2 -A ADGUARD6 -p udp --dport 53 -j REJECT --reject-with icmp6-port-unreachable 2>/dev/null; then
         ip6tables -w 2 -A ADGUARD6 -p udp --dport 53 -j DROP 2>/dev/null
     fi
@@ -259,10 +312,17 @@ refresh_network() {
 
 # 10. 【吸收项 2】开机单次启动健康预检 (Pre-flight Check，杜绝配置错乱变砖)
 preflight_check() {
+    if agh_running && ! agh_has_dedicated_gid; then
+        # 若检测到旧进程未绑定专属 GID (23333)，自动重启切换至隔离用户组
+        killall -9 AdGuardHome 2>/dev/null || kill -9 $(pidof AdGuardHome 2>/dev/null) 2>/dev/null
+        sleep 1
+    fi
     agh_running || start_agh
     port_hex=$(printf '%04X' "$redir_port")
     for i in 1 2 3 4 5; do
         if grep -q ":$port_hex " /proc/net/udp 2>/dev/null || grep -q ":$port_hex " /proc/net/udp6 2>/dev/null; then
+            agh_real_pid=$(pidof AdGuardHome 2>/dev/null | awk '{print $1}')
+            [ -n "$agh_real_pid" ] && echo "$agh_real_pid" > "$PID_FILE"
             echo "$(date '+%F %T') [PRE-FLIGHT] 本地 DNS 端口 ($redir_port) 就绪，执行规则接管。" >> "$MAIN_LOG"
             return 0
         fi

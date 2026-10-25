@@ -6,9 +6,11 @@ BIN_DIR="$AGH_DIR/bin"
 MAIN_LOG="$AGH_DIR/agh.log"
 MODULES_DIR="/data/adb/modules"
 AGH_MODULE_PROP="/data/adb/modules/AdGuardHome/module.prop"
+AGH_GID=23333
+export PATH="/data/adb/ksu/bin:/data/adb/ap/bin:/data/adb/magisk:$PATH"
 
 # 解锁脚本防篡改保护
-find "$ADGPATH" -type f -name "*.sh" -exec chattr -i {} \;
+find "$ADGPATH" "$SCRIPT_DIR" -type f -name "*.sh" -exec chattr -i {} \; 2>/dev/null
 
 # 系统语言检测
 locale=$(getprop persist.sys.locale)
@@ -105,15 +107,34 @@ if ! agh_running; then
             sed -i '/^sni_filter:/,/^[^[:space:]]/ s/^\([[:space:]]*enabled:\) true/\1 false/' "$BIN_DIR/AdGuardHome.yaml"
         fi
 
-        # 启动AdGuardHome
+        # 启动AdGuardHome（绑定专属 GID 23333，与系统 netd [uid=0,gid=0] 彻底物理隔离）
         export SSL_CERT_DIR="/system/etc/security/cacerts/"
         [ -s "$CA_BUNDLE" ] && export SSL_CERT_FILE="$CA_BUNDLE"
-        "$BIN_DIR/AdGuardHome" --no-check-update >/dev/null 2>&1 &
-        echo "$!" > "$BIN_DIR/AdGuardHome.pid"
+        if command -v busybox >/dev/null 2>&1 && busybox chpst -u 0:$AGH_GID true 2>/dev/null; then
+            busybox chpst -u 0:$AGH_GID "$BIN_DIR/AdGuardHome" --no-check-update >/dev/null 2>&1 &
+            echo "$!" > "$BIN_DIR/AdGuardHome.pid"
+        elif command -v busybox >/dev/null 2>&1 && busybox setpriv --reuid=0 --regid=$AGH_GID --clear-groups true 2>/dev/null; then
+            busybox setpriv --reuid=0 --regid=$AGH_GID --clear-groups "$BIN_DIR/AdGuardHome" --no-check-update >/dev/null 2>&1 &
+            echo "$!" > "$BIN_DIR/AdGuardHome.pid"
+        elif command -v setpriv >/dev/null 2>&1 && setpriv --reuid=0 --regid=$AGH_GID --clear-groups true 2>/dev/null; then
+            setpriv --reuid=0 --regid=$AGH_GID --clear-groups "$BIN_DIR/AdGuardHome" --no-check-update >/dev/null 2>&1 &
+            echo "$!" > "$BIN_DIR/AdGuardHome.pid"
+        elif command -v chpst >/dev/null 2>&1 && chpst -u 0:$AGH_GID true 2>/dev/null; then
+            chpst -u 0:$AGH_GID "$BIN_DIR/AdGuardHome" --no-check-update >/dev/null 2>&1 &
+            echo "$!" > "$BIN_DIR/AdGuardHome.pid"
+        elif command -v su >/dev/null 2>&1 && su -g $AGH_GID -c true 2>/dev/null; then
+            su -g $AGH_GID -c "exec '$BIN_DIR/AdGuardHome' --no-check-update >/dev/null 2>&1" &
+            echo "$!" > "$BIN_DIR/AdGuardHome.pid"
+        else
+            "$BIN_DIR/AdGuardHome" --no-check-update >/dev/null 2>&1 &
+            echo "$!" > "$BIN_DIR/AdGuardHome.pid"
+        fi
 
         sleep 2
         if agh_running; then
-            [ "$lang" = "zh" ] && echo "$(date '+%F %T') AdGuardHome 启动成功。" >> "$MAIN_LOG" || echo "$(date '+%F %T') AdGuardHome started successfully." >> "$MAIN_LOG"
+            agh_real_pid=$(pidof AdGuardHome 2>/dev/null | awk '{print $1}')
+            [ -n "$agh_real_pid" ] && echo "$agh_real_pid" > "$BIN_DIR/AdGuardHome.pid"
+            [ "$lang" = "zh" ] && echo "$(date '+%F %T') AdGuardHome 启动成功 (PID=${agh_real_pid:-unknown}, GID=$AGH_GID)。" >> "$MAIN_LOG" || echo "$(date '+%F %T') AdGuardHome started successfully (PID=${agh_real_pid:-unknown}, GID=$AGH_GID)." >> "$MAIN_LOG"
             break
         fi
     done

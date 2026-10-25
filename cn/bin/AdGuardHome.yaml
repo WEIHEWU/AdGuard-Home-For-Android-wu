@@ -151,7 +151,6 @@ user_rules:
   - '@@||android.com^$important'
   - '@@||gvt1.com^$important'
   - '@@||gvt2.com^$important'
-  - '@@||1e100.net^$important'
   - '@@||ggpht.com^$important'
   # --- Google 钱包、支付、安全证明与 GMS 代币化核心端点 ---
   - '@@||payments.google.com^$important'
