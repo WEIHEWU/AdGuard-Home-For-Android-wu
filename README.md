@@ -1,6 +1,6 @@
 # AdGuard Home For Android
 
-**[📥 下载海外版模块 (Overseas)](https://github.com/WEIHEWU/AdGuard-Home-For-Android-wu/raw/main/releases/AdGuard_Home_For_Android_20261026_Beta1_Overseas.zip)** · **[📥 下载国内版模块 (CN)](https://github.com/WEIHEWU/AdGuard-Home-For-Android-wu/raw/main/releases/AdGuard_Home_For_Android_20261026_Beta1_CN.zip)** · **[📱 单独下载管理器 APK](https://github.com/WEIHEWU/AdGuard-Home-For-Android-wu/raw/main/releases/AdGuardHomeManager.apk)** · [Releases 页面](https://github.com/WEIHEWU/AdGuard-Home-For-Android-wu/releases)
+**[📥 下载海外版模块 (Overseas)](https://github.com/WEIHEWU/AdGuard-Home-For-Android-wu/raw/main/releases/AdGuard_Home_For_Android_20261026_Beta2_Overseas.zip)** · **[📥 下载国内版模块 (CN)](https://github.com/WEIHEWU/AdGuard-Home-For-Android-wu/raw/main/releases/AdGuard_Home_For_Android_20261026_Beta2_CN.zip)** · **[📱 单独下载管理器 APK](https://github.com/WEIHEWU/AdGuard-Home-For-Android-wu/raw/main/releases/AdGuardHomeManager.apk)** · [Releases 页面](https://github.com/WEIHEWU/AdGuard-Home-For-Android-wu/releases)
 
 基于 Magisk / KernelSU / APatch 的 **AdGuard Home For Android** 全设备级 DNS 与内核 NFQUEUE SNI 去广告模块。专为追求**极致省电、零断流、临时 Root 软重启兼容、以及 VPN / 代理无缝协同**打造。
 

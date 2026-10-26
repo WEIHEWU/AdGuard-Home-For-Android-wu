@@ -88,9 +88,6 @@ safe_clean "/data/data/cn.damai/files/ad_dir"
 # 顺丰速递
 safe_clean "/data/data/com.sf.activity/files/openScreenADsImg"
 
-# 丰云行
-safe_clean "/data/media/0/Android/data/com.yongyou/files/Pictures"
-
 # 猫耳FM
 safe_clean "/data/data/cn.missevan/cache/splash"
 
@@ -116,12 +113,6 @@ safe_clean "/data/data/com.anjuke.android.app/cache/splash_ad"
 # 买单吧
 safe_clean "/data/data/com.bankcomm.maidanba/files/imageCachePath"
 safe_clean "/data/data/com.bankcomm.maidanba/files/tabAdsPath"
-
-# 中国移动
-safe_clean "/data/data/com.greenpoint.android.mc10086.activity/shared_prefs/default.xml"
-
-# YY
-safe_clean "/data/data/com.duowan.mobile/shared_prefs/CommonPref.xml"
 
 # 米家
 safe_clean "/data/data/com.xiaomi.smarthome/files/sh_ads_file"
@@ -154,9 +145,6 @@ safe_clean "/data/media/0/Android/data/com.jingdong.app.mall/cache/JDVideoFileDi
 # 小福家
 safe_clean "/data/data/com.coocaa.familychat/app_e_qq_com_setting_7d767d052a5753acb54b111c8a40c128/sdkCloudSetting.cfg"
 
-# 堆糖
-safe_clean "/data/data/com.duitang.main/shared_prefs/name.xml"
-
 # 同花顺
 safe_clean "/data/data/com.hexin.plat.android/cache/splash_images"
 
@@ -165,9 +153,6 @@ safe_clean "/data/data/com.plateno.botaoota/cache/image_manager_disk_cache"
 
 # 腾讯地图
 safe_clean "/data/data/com.tencent.map/databases/splash.db"
-
-# 4399游戏盒
-safe_clean "/data/data/com.m4399.gamecenter/shared_prefs/com.m4399.gamecenter.app.xml"
 
 # 今日头条
 safe_clean "/data/data/com.ss.android.article.news/files/splashCache"
@@ -221,9 +206,6 @@ safe_clean "/data/data/com.pwrd.steam.esports/shared_prefs/advertisement_sp_name
 # 人卫
 safe_clean "/data/data/com.pmph.irenwei/cache/image_manager_disk_cache"
 safe_clean "/data/data/com.pmph.irenwei/files/ad.gif"
-
-# 中国银河证券
-safe_clean "/data/data/com.galaxy.stock/files"
 
 # 南方基金
 safe_clean "/data/media/0/Android/data/com.nanfangjijin.app/files/ad"

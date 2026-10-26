@@ -116,7 +116,35 @@ ip6tables -w 2 -t filter -D OUTPUT -j AGH_SNI 2>/dev/null
 ip6tables -w 2 -t filter -F AGH_SNI 2>/dev/null
 ip6tables -w 2 -t filter -X AGH_SNI 2>/dev/null
 
-# 正在保留配置文件（过滤掉作者原版泄漏的订阅链接）
+# 正在智能迁移与保留配置文件（保留个人自定义规则与开关，同时升级最新分流上游并清理已知问题规则）
+if [ -f "$BACKUP_DIR/AdGuardHome.yaml" ] && [ -f "$BIN_DIR/AdGuardHome.yaml" ]; then
+    # 1. 保留用户修改过的后台密码哈希
+    old_pwd=$(sed -n 's/^[[:space:]]*password:[[:space:]]*\(.*\)/\1/p' "$BACKUP_DIR/AdGuardHome.yaml" | head -n 1)
+    if [ -n "$old_pwd" ]; then
+        escaped_pwd=$(printf '%s' "$old_pwd" | sed 's/[&|]/\\&/g')
+        sed -i "s|^\([[:space:]]*password:[[:space:]]*\).*|\1$escaped_pwd|" "$BIN_DIR/AdGuardHome.yaml" 2>/dev/null
+    fi
+    # 2. 提取用户在旧版中自行添加的自定义规则（自动过滤已被移除的 1e100.net 过宽白名单），合并至新版配置
+    awk '
+        /^user_rules:/ { in_rules = 1; next }
+        in_rules && /^[^[:space:]#]/ { in_rules = 0 }
+        in_rules && /^[[:space:]]*-[[:space:]]*/ {
+            rule = $0
+            sub(/^[[:space:]]*-[[:space:]]*/, "", rule)
+            gsub(/^'\''|'\''$|^"|"$|[[:space:]]+$/, "", rule)
+            if (rule != "" && rule !~ /1e100\.net/) print rule
+        }
+    ' "$BACKUP_DIR/AdGuardHome.yaml" 2>/dev/null | while IFS= read -r urule; do
+        [ -z "$urule" ] && continue
+        if ! grep -qF "$urule" "$BIN_DIR/AdGuardHome.yaml" 2>/dev/null; then
+            escaped_rule=$(printf '%s' "$urule" | sed "s/'/''/g")
+            sed -i "/^tls:/i\\
+  - '$escaped_rule'" "$BIN_DIR/AdGuardHome.yaml" 2>/dev/null
+        fi
+    done
+    i18n_print "- Merged custom user_rules from backup (cleaned 1e100.net)" "- 已从备份智能合并个人自定义规则（并自动清理 1e100.net 漏洞规则）"
+fi
+
 if [ -f "$BACKUP_DIR/config.prop" ]; then
     old_url=$(sed -n 's/^PROXY_URL=//p' "$BACKUP_DIR/config.prop" | tr -d '"' | tr -d "'")
     if [ -n "$old_url" ] && [ "$old_url" != " " ] && ! echo "$old_url" | grep -q "smjcdh\.top"; then
@@ -130,6 +158,12 @@ if [ -f "$BACKUP_DIR/config.prop" ]; then
         echo "OPTIMISTIC_CACHE_MODE=\"$old_mode\"" >> "$SCRIPT_DIR/config.prop"
         i18n_print "- Preserved OPTIMISTIC_CACHE_MODE from backup" "- 已从备份恢复 OPTIMISTIC_CACHE_MODE"
     fi
+    for key in ENABLE_SNI sni_ports VPN_DNS_TAKEOVER; do
+        old_val=$(sed -n "s/^${key}=//p" "$BACKUP_DIR/config.prop" | head -n 1)
+        if [ -n "$old_val" ]; then
+            sed -i "s|^${key}=.*|${key}=${old_val}|" "$SCRIPT_DIR/config.prop" 2>/dev/null
+        fi
+    done
 fi
 sh "$SCRIPT_DIR/ProxyConfig.sh" --once >/dev/null 2>&1
 # 安装 AdGuard Home 管理器 APP 到手机主用户 (User 0)

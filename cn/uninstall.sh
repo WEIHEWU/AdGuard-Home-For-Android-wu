@@ -16,9 +16,21 @@ while iptables -w 2 -t nat -D OUTPUT -j ADGUARD 2>/dev/null; do :; done
 iptables -w 2 -t nat -F ADGUARD 2>/dev/null
 iptables -w 2 -t nat -X ADGUARD 2>/dev/null
 
+while ip6tables -w 2 -t nat -D OUTPUT -j ADGUARD6_NAT 2>/dev/null; do :; done
+ip6tables -w 2 -t nat -F ADGUARD6_NAT 2>/dev/null
+ip6tables -w 2 -t nat -X ADGUARD6_NAT 2>/dev/null
+
 while ip6tables -w 2 -D OUTPUT -j ADGUARD6 2>/dev/null; do :; done
 ip6tables -w 2 -F ADGUARD6 2>/dev/null
 ip6tables -w 2 -X ADGUARD6 2>/dev/null
+
+while iptables -w 2 -t filter -D INPUT -j AGH_INPUT 2>/dev/null; do :; done
+iptables -w 2 -t filter -F AGH_INPUT 2>/dev/null
+iptables -w 2 -t filter -X AGH_INPUT 2>/dev/null
+
+while ip6tables -w 2 -t filter -D INPUT -j AGH_INPUT 2>/dev/null; do :; done
+ip6tables -w 2 -t filter -F AGH_INPUT 2>/dev/null
+ip6tables -w 2 -t filter -X AGH_INPUT 2>/dev/null
 
 while iptables -w 2 -t filter -D OUTPUT -j ADGUARD_DOT 2>/dev/null; do :; done
 iptables -w 2 -t filter -F ADGUARD_DOT 2>/dev/null

@@ -34,17 +34,16 @@ dns:
     - '[/au/]https://1.1.1.1/dns-query'
     - '[/au/]https://8.8.8.8/dns-query'
     - '[/au/]https://9.9.9.9/dns-query'
-    # --- 中国大陆常用网站与特定服务：走阿里DNS / 腾讯DNSPod，精准分配国内最优CDN与加速节点 ---
+    # --- 中国大陆常用网站与「一键回国」音视频/音乐/直播服务：走阿里DNS / 腾讯DNSPod，精准分配国内最优CDN与解锁节点 ---
     - '[/cn/edu.cn/gov.cn/]https://223.5.5.5/dns-query'
-    - '[/qq.com/weixin.com/tencent.com/qpic.cn/qlogo.cn/]https://1.12.12.12/dns-query'
+    - '[/qq.com/weixin.com/tencent.com/qpic.cn/qlogo.cn/gtimg.cn/gtimg.com/myqcloud.com/servicewechat.com/weiyun.com/]https://1.12.12.12/dns-query'
     - '[/taobao.com/tmall.com/alicdn.com/aliyun.com/alipay.com/tbcache.com/alipayobjects.com/]https://223.5.5.5/dns-query'
-    - '[/bilibili.com/bilivideo.com/biliapi.net/hdslb.com/]https://223.5.5.5/dns-query'
-    - '[/douyin.com/snssdk.com/toutiao.com/zijieapi.com/byteimg.com/pstatp.com/]https://223.5.5.5/dns-query'
+    - '[/bilibili.com/bilivideo.com/biliapi.net/biliapi.com/hdslb.com/acfun.cn/aixifan.com/douyu.com/douyucdn.cn/huya.com/msstatic.com/]https://223.5.5.5/dns-query'
+    - '[/iqiyi.com/iqiyipic.com/71.am/youku.com/ykimg.com/mgtv.com/hunantv.com/hitv.com/miguvideo.com/migu.cn/yangshipin.cn/cctv.com/cctvpic.com/cntv.cn/sohu.com/itc.cn/le.com/letv.com/]https://223.5.5.5/dns-query'
+    - '[/163.com/126.net/127.net/netease.com/kugou.com/kuwo.cn/koowo.com/qishui.com/ximalaya.com/xmcdn.com/]https://223.5.5.5/dns-query'
+    - '[/douyin.com/snssdk.com/toutiao.com/zijieapi.com/byteimg.com/pstatp.com/bytedance.com/kuaishou.com/yximgs.com/kwai.net/xhscdn.com/xiaohongshu.com/weibo.com/weibocdn.com/sinaimg.cn/sina.com.cn/zhihu.com/zhimg.com/]https://223.5.5.5/dns-query'
     - '[/baidu.com/bdstatic.com/baidupcs.com/bdimg.com/]https://223.5.5.5/dns-query'
-    - '[/jd.com/360buy.com/360buyimg.com/]https://223.5.5.5/dns-query'
-    - '[/163.com/126.net/netease.com/]https://223.5.5.5/dns-query'
-    - '[/zhihu.com/zhimg.com/weibo.com/sina.com.cn/xiaomi.com/mi.com/kuaishou.com/iqiyi.com/youku.com/]https://223.5.5.5/dns-query'
-    - '[/xhscdn.com/xiaohongshu.com/]https://223.5.5.5/dns-query'
+    - '[/jd.com/360buy.com/360buyimg.com/xiaomi.com/mi.com/meituan.com/dpfile.com/dianping.com/ctrip.com/12306.cn/]https://223.5.5.5/dns-query'
     # --- 澳洲本地及全球其它网站（Gmail/Google全家桶/澳洲网银/本地媒体等）：走澳洲本地超低延迟 Anycast DNS ---
     - https://1.1.1.1/dns-query
     - https://1.0.0.1/dns-query

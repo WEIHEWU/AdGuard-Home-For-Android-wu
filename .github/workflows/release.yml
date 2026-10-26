@@ -21,21 +21,28 @@ jobs:
       - name: Create GitHub Release and Upload Packages
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v20261026-Beta1
-          name: "AdGuard Home For Android 20261026-Beta1"
+          tag_name: v20261026-Beta2
+          name: "AdGuard Home For Android 20261026-Beta2"
           body: |
-            ### AdGuard Home For Android `20261026-Beta1`
+            ### AdGuard Home For Android `20261026-Beta2`
 
             提供 **🌏 海外版 (Overseas)** 与 **🇨🇳 中国国内版 (CN)** 两个定制版本，均已内置最新配套的 **AdGuard Home Manager v2.24.7** 管理器应用。
 
-            #### 🆕 20261026-Beta1 更新亮点
-            - **彻底根治系统 `netd (uid 0)` 在公共 DNS 网络下绕过拦截的缺陷 (`service.sh` & `iptables.sh`)**：
-              - **专属用户组物理隔离 (`uid=0, gid=23333`)**：将 `AdGuardHome` 进程绑定至专属用户组 `gid=23333` 启动，与 Android 系统 DNS 守护进程 `netd` (`uid=0, gid=0`) 彻底划清界限；
-              - **四链同步精准豁免 (`--uid-owner 0 --gid-owner 23333`)**：在 `ADGUARD` (IPv4 53 重定向)、`ADGUARD6` (IPv6 53 阻断)、`ADGUARD_DOT` (853 加密 DNS 阻断) 与 `AGH_SNI` (NFQUEUE 嗅探) 四条链中仅豁免 `AdGuardHome` 自身进程，并附带 `! --dport 53` 兜底防护；
-              - **100% 拦截且永不死锁**：无论当前 Wi-Fi / 路由器 DNS 是否与上游 IP（如 `1.1.1.1`、`8.8.8.8`、`223.5.5.5`、`119.29.29.29`）重合，`netd` 发起的系统级 DNS 解析均 100% 强制进入 AdGuard Home，同时 AGH 自身的 Bootstrap 53 / DoH 443 请求直通无回环。
-            - **修复 Google 广告通过 `1e100.net` CNAME 白名单逃逸问题 (`AdGuardHome.yaml` & `default_user_rules.txt`)**：
-              - 移除过宽的 `@@||1e100.net^$important` 白名单规则，防止 `doubleclick.net`、`googleadservices.com`、`googlesyndication.com` 等 Google 广告域名利用 CNAME 指向 `*.1e100.net` 绕过拦截，同时完整保留 Google Play / GMS / Google Pay 精确白名单。
+            #### 🆕 20261026-Beta2 更新亮点
+            - **「一键回国 VPN」深度适配与满血去广告 (`iptables.sh` & `AdGuardHome.yaml`)**：
+              - 默认启用 `VPN_DNS_TAKEOVER=1`：开启回国 VPN（快帆、穿梭、Malus、QuickFox、Sixfast 等）时，强制接管发往 VPN 虚拟 DNS 的 53 端口查询，并在 `AGH_SNI` 443 握手首包嗅探中涵盖 `198.18.0.0/15` 网段；
+              - 全面补齐海外版「回国音视频/音乐/直播」国内 DoH 分流域名（B站、爱奇艺、优酷、腾讯视频、芒果TV、咪咕视频、央视频、网易云音乐、QQ音乐、酷狗、酷我、汽水音乐、喜马拉雅、斗鱼、虎牙等），兼顾大陆版权解锁与 100% 广告拦截。
+            - **覆盖升级自动保留个人自定义规则与配置 (`customize.sh`)**：
+              - 刷入新版本时自动从备份提取并合并个人自定义规则与后台密码（同时自动清理已知的 `1e100.net` 过宽白名单），并完整保留 `config.prop` 的所有开关。
+            - **纯 IPv6 (464XLAT) 移动网络不断网保护 (`iptables.sh`)**：
+              - IPv6 53 端口优先采用 `ip6tables -t nat REDIRECT` 重定向至本地 AGH 端口，防止 Telstra 等纯 IPv6 移动网络下断网；同时新增 `AGH_INPUT` 链防止局域网外部设备滥用本机 DNS 端口。
+            - **全 ROM 兼容性与省电加固 (`iptables.sh` & `NoAdsService.sh`)**：
+              - 新增 `curl` 缺失自动回退 `busybox wget` 机制；
+              - 前台放行应用探测优先读取零开销 `/dev/cpuset/top-app/cgroup.procs`，并在启动时自动复位异常残留的暂停状态；
+              - 移除 `NoAdsService.sh` 中可能误删应用配置或登录态的 6 条宽泛路径。
+            - **包含 `20261026-Beta1` 全部修复**：
+              - 专属用户组 (`uid=0, gid=23333`) 物理隔离 `AdGuardHome` 与系统 `netd (uid=0, gid=0)`，彻底根治公共 DNS 撞车漏拦问题。
           files: |
-            releases/AdGuard_Home_For_Android_20261026_Beta1_Overseas.zip
-            releases/AdGuard_Home_For_Android_20261026_Beta1_CN.zip
+            releases/AdGuard_Home_For_Android_20261026_Beta2_Overseas.zip
+            releases/AdGuard_Home_For_Android_20261026_Beta2_CN.zip
             releases/AdGuardHomeManager.apk
