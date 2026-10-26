@@ -19,7 +19,7 @@ export PATH="/data/adb/ksu/bin:/data/adb/ap/bin:/data/adb/magisk:$PATH"
 [ -f "$AGH_DIR/scripts/config.prop" ] && . "$AGH_DIR/scripts/config.prop"
 redir_port=${redir_port:-31587}
 ENABLE_SNI=${ENABLE_SNI:-1}
-VPN_DNS_TAKEOVER=${VPN_DNS_TAKEOVER:-1}
+VPN_DNS_TAKEOVER=${VPN_DNS_TAKEOVER:-0}
 
 # 统一 HTTP 调用封装：优先使用 curl，若 ROM 未内置 curl 则自动回退至 busybox wget / wget
 agh_api_get() {
