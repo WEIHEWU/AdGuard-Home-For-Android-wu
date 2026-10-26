@@ -17,7 +17,7 @@
 | **适用人群** | 身处海外（澳洲/欧美/亚太等），物理网络可直连全球 | 身处中国大陆（纯国内直连，或配合 VPN / 订阅链接翻墙） |
 | **默认上游 DNS** | **Cloudflare / Google / Quad9 超低延迟 IP DoH** + 国内大厂域名分流回阿里/腾讯 DoH | **腾讯 DNSPod (`1.12.12.12` / `120.53.53.53`) DoH** + 阿里/腾讯 Bootstrap |
 | **规则订阅源** | GitHub 官方直连源 (`raw.githubusercontent.com`) | 国内免翻墙高速镜像 (`ghfast.top`) |
-| **独立 VPN App 模式** | ✅ 默认支持（`PROXY_URL` 留空即可） | ✅ 默认支持（`PROXY_URL` 留空即可） |
+| **独立 VPN App 模式** | ✅ 默认开启「回国加速接管模式」(`VPN_DNS_TAKEOVER=1`)，可在管理 App 内一键切换 | ✅ 默认开启「翻墙出国 Fake-IP 兼容模式」(`VPN_DNS_TAKEOVER=0`)，可在管理 App 内一键切换 |
 | **App 填订阅链接模式** | ✅ 支持（填入 `PROXY_URL` 自动激活） | ✅ 支持（填入 `PROXY_URL` 自动激活对接 Box/Clash） |
 
 ---

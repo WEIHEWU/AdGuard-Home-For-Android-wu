@@ -44,6 +44,8 @@ dns:
     - https://101.226.4.6/dns-query
     - https://218.30.118.6/dns-query
     - https://123.125.81.6/dns-query
+    - https://1.1.1.1/dns-query
+    - https://8.8.8.8/dns-query
   upstream_mode: load_balance
   fastest_timeout: 1s
   allowed_clients: []
