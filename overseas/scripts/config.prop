@@ -14,5 +14,5 @@ PROXY_URL=""
 # 乐观缓存管理模式 (auto: 默认推荐，随 VPN 状态智能切换并在 App 中实时显示; force_on: 始终强制开启; force_off: 始终强制关闭/完全由你在 App 手动控制)
 OPTIMISTIC_CACHE_MODE="auto"
 
-# VPN (如一键回国加速器) 开启时仍由 AdGuard Home 强制接管 DNS 过滤 (1: 开启接管，兼顾回国解锁与去广告; 0: 放行 172.19/198.18 虚拟 DNS)
-VPN_DNS_TAKEOVER=1
+# VPN 下 DNS 接管策略 (auto: 默认推荐，零耗电本地自动识别“一键回国 VPN”与“翻墙出国 VPN”；1: 始终强制接管；0: 始终放行)
+VPN_DNS_TAKEOVER=auto

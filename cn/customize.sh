@@ -158,7 +158,7 @@ if [ -f "$BACKUP_DIR/config.prop" ]; then
         echo "OPTIMISTIC_CACHE_MODE=\"$old_mode\"" >> "$SCRIPT_DIR/config.prop"
         i18n_print "- Preserved OPTIMISTIC_CACHE_MODE from backup" "- 已从备份恢复 OPTIMISTIC_CACHE_MODE"
     fi
-    for key in ENABLE_SNI sni_ports VPN_DNS_TAKEOVER; do
+    for key in ENABLE_SNI sni_ports; do
         old_val=$(sed -n "s/^${key}=//p" "$BACKUP_DIR/config.prop" | head -n 1)
         if [ -n "$old_val" ]; then
             sed -i "s|^${key}=.*|${key}=${old_val}|" "$SCRIPT_DIR/config.prop" 2>/dev/null

@@ -14,6 +14,5 @@ PROXY_URL=""
 # 乐观缓存管理模式 (auto: 默认推荐，随 VPN 状态智能切换并在 App 中实时显示; force_on: 始终强制开启; force_off: 始终强制关闭/完全由你在 App 手动控制)
 OPTIMISTIC_CACHE_MODE="auto"
 
-# VPN 开启时是否强制接管 172.19/198.18 虚拟 DNS 的 53 端口
-# 国内版默认设为 0：放行 Clash/Sing-box 等翻墙 VPN 的 Fake-IP 53 端口防国内 DNS 污染外网，同时由 AGH_SNI 在 443 握手首包嗅探拦截广告
-VPN_DNS_TAKEOVER=0
+# VPN 下 DNS 接管策略 (auto: 默认推荐，零耗电本地自动识别“翻墙出国 VPN”与“一键回国 VPN”；1: 始终强制接管；0: 始终放行)
+VPN_DNS_TAKEOVER=auto

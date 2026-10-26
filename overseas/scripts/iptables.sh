@@ -236,6 +236,74 @@ rebuild_dot_guard() {
     ip6tables -w 2 -t filter -I OUTPUT 1 -j ADGUARD_DOT
 }
 
+# 5c. 智能零耗电本地判定 VPN DNS 接管模式（仅在启动及 VPN 状态切换瞬间执行 1 次，0 网络请求、0 轮询、0 死循环）
+# 返回 0 (true): 强制接管 VPN DNS（回国加速模式，100% 拦截国内音视频广告）
+# 返回 1 (false): 放行 VPN 自身 DNS（翻墙出国防污染模式，靠 AGH_SNI 拦截广告）
+should_takeover_vpn_dns() {
+    if [ "$VPN_DNS_TAKEOVER" = "1" ]; then
+        echo "takeover" > "$AGH_DIR/vpn_mode_status" 2>/dev/null
+        return 0
+    elif [ "$VPN_DNS_TAKEOVER" = "0" ]; then
+        echo "bypass" > "$AGH_DIR/vpn_mode_status" 2>/dev/null
+        return 1
+    fi
+
+    has_vpn=0
+    for iface in /sys/class/net/tun* /sys/class/net/wg* /sys/class/net/ppp*; do
+        if [ -d "$iface" ]; then
+            has_vpn=1
+            break
+        fi
+    done
+
+    if [ "$has_vpn" = "0" ]; then
+        echo "off" > "$AGH_DIR/vpn_mode_status" 2>/dev/null
+        return 0
+    fi
+
+    # 第一层（最快最准）：检查虚拟网卡 IP 与路由是否包含 Fake-IP / Sing-box / Clash 专用网段 (198.18.0.0/15, 172.19.0.0/16)
+    if ip -4 addr show 2>/dev/null | grep -qE '198\.18\.|172\.19\.' || \
+       ip -4 route show table all 2>/dev/null | grep -qE '198\.18\.|172\.19\.'; then
+        echo "bypass" > "$AGH_DIR/vpn_mode_status" 2>/dev/null
+        return 1
+    fi
+
+    # 第二层：检查当前运行的 VPN 进程包名特征（纯本地读取 /proc，毫秒级）
+    vpn_procs=$(ps -A -o ARGS 2>/dev/null || ps 2>/dev/null)
+    if echo "$vpn_procs" | grep -qiE 'in\.malus|getmalus|transocks|shuttle|speedcn|quickfox|sixfast|golink|kanet|flycn|backcn|c2cvpn|haigui|guiyan|unblockcn'; then
+        echo "takeover" > "$AGH_DIR/vpn_mode_status" 2>/dev/null
+        return 0
+    fi
+    if echo "$vpn_procs" | grep -qiE 'clash|mihomo|sing-box|singbox|v2ray|nekobox|nb4a|husi|karing|matsuri|sagernet|surfboard|shadowsocks|hiddify|xray|outline|psiphon|lantern|protonvpn|expressvpn|nordvpn|surfshark|mullvad|onedotonedotonedotone'; then
+        echo "bypass" > "$AGH_DIR/vpn_mode_status" 2>/dev/null
+        return 1
+    fi
+
+    # 第三层：读取手机当前连接的物理蜂窝基站国家码（纯内存读取 getprop，非 SIM 卡归属地，漫游回国同样精准识别）
+    op_country=$(getprop gsm.operator.iso-country 2>/dev/null | tr 'A-Z' 'a-z')
+    op_mcc=$(getprop gsm.operator.numeric 2>/dev/null)
+    case "$op_country" in
+        *cn*)
+            echo "bypass" > "$AGH_DIR/vpn_mode_status" 2>/dev/null
+            return 1
+            ;;
+    esac
+    case "$op_mcc" in
+        460*|*,460*)
+            echo "bypass" > "$AGH_DIR/vpn_mode_status" 2>/dev/null
+            return 1
+            ;;
+    esac
+    if [ -n "$(echo "$op_country" | tr -d ',[:space:]')" ]; then
+        echo "takeover" > "$AGH_DIR/vpn_mode_status" 2>/dev/null
+        return 0
+    fi
+
+    # 第四层：终极兜底（飞行模式无基站信号且为未知 VPN 时，海外版默认接管）
+    echo "takeover" > "$AGH_DIR/vpn_mode_status" 2>/dev/null
+    return 0
+}
+
 # 6. 应用高效 DNS 重定向规则
 apply_rules() {
     # 建立 IPv4 DNS 重定向
@@ -258,10 +326,21 @@ apply_rules() {
             esac
         done
     fi
-    # 当 VPN_DNS_TAKEOVER=1（默认开启，专为“一键回国”VPN 等场景优化）时，强制接管 VPN 虚拟 DNS 的 53 端口查询
-    if [ "${VPN_DNS_TAKEOVER:-1}" != "1" ]; then
+    # 根据纯本地智能识别结果动态配置 VPN DNS 策略：
+    if should_takeover_vpn_dns; then
+        # 回国加速接管模式（或未开 VPN）：仅保留 Fake-IP 静态网段兜底，tun+ 上的 53 端口 DNS 全部强制接管进 AdGuardHome
         iptables -w 2 -t nat -A ADGUARD -d 198.18.0.0/15 -j RETURN 2>/dev/null
         iptables -w 2 -t nat -A ADGUARD -d 172.19.0.0/16 -j RETURN 2>/dev/null
+    else
+        # 翻墙出国防污染模式：放行 Fake-IP 与 VPN 虚拟网卡 (tun+ / wg+ / ppp+) 的 53 端口，防国内 DNS 污染，由 AGH_SNI 在 443 握手层拦截广告
+        iptables -w 2 -t nat -A ADGUARD -d 198.18.0.0/15 -j RETURN 2>/dev/null
+        iptables -w 2 -t nat -A ADGUARD -d 172.19.0.0/16 -j RETURN 2>/dev/null
+        iptables -w 2 -t nat -A ADGUARD -o tun+ -p udp --dport 53 -j RETURN 2>/dev/null
+        iptables -w 2 -t nat -A ADGUARD -o tun+ -p tcp --dport 53 -j RETURN 2>/dev/null
+        iptables -w 2 -t nat -A ADGUARD -o wg+ -p udp --dport 53 -j RETURN 2>/dev/null
+        iptables -w 2 -t nat -A ADGUARD -o wg+ -p tcp --dport 53 -j RETURN 2>/dev/null
+        iptables -w 2 -t nat -A ADGUARD -o ppp+ -p udp --dport 53 -j RETURN 2>/dev/null
+        iptables -w 2 -t nat -A ADGUARD -o ppp+ -p tcp --dport 53 -j RETURN 2>/dev/null
     fi
     iptables -w 2 -t nat -A ADGUARD -p udp --dport 53 -j REDIRECT --to-ports "$redir_port"
     iptables -w 2 -t nat -A ADGUARD -p tcp --dport 53 -j REDIRECT --to-ports "$redir_port"
@@ -350,7 +429,7 @@ clean_all_rules() {
     ip6tables -w 2 -t filter -F AGH_SNI 2>/dev/null
     ip6tables -w 2 -t filter -X AGH_SNI 2>/dev/null
     clean_hotspot_rules
-    rm -f "$AGH_DIR/app_pause_active" 2>/dev/null
+    rm -f "$AGH_DIR/app_pause_active" "$AGH_DIR/vpn_mode_status" 2>/dev/null
 }
 
 # 9. 刷新网络状态（温和刷新，绝不开关飞行模式打断 VPN）
@@ -401,15 +480,6 @@ check_vpn_and_cache() {
         return 0
     fi
 
-    # 若用户配置了强制模式 (force_on / force_off)，则完全交由用户在 App 中手动控制，后台不自动干预
-    opt_mode="${OPTIMISTIC_CACHE_MODE:-auto}"
-    if [ "$opt_mode" = "force_off" ] || [ "$opt_mode" = "force_on" ]; then
-        vpn_status_last="$vpn_now"
-        vpn_pending_status=""
-        vpn_pending_count=0
-        return 0
-    fi
-
     # 若当前探测状态与已生效状态一致，说明网络稳定，重置防抖计数器
     if [ "$vpn_now" = "$vpn_status_last" ]; then
         vpn_pending_status=""
@@ -427,28 +497,38 @@ check_vpn_and_cache() {
 
     # 连续稳定确认至少 2 次（持续 6 秒以上），才真正判定为有效切换
     if [ "$vpn_pending_count" -ge 2 ]; then
+        # 重新执行一次本地智能识别并更新 iptables ADGUARD 规则链（0 网络包、单次执行）
+        apply_rules
+        vpn_mode_cur=$(cat "$AGH_DIR/vpn_mode_status" 2>/dev/null)
+        opt_mode="${OPTIMISTIC_CACHE_MODE:-auto}"
         http_port=$(sed -n 's/^[[:space:]]*address:[[:space:]]*127\.0\.0\.1:\([0-9]*\).*/\1/p' "$BIN_DIR/AdGuardHome.yaml" 2>/dev/null | head -n 1)
         if [ -n "$http_port" ]; then
             if [ "$vpn_now" = "on" ]; then
-                # 连接 VPN：自动关闭乐观缓存并秒级清空旧 DNS 缓存，防止国内 CDN 节点走错
-                cfg=$(agh_api_get "http://127.0.0.1:$http_port/control/dns_info")
-                if [ -n "$cfg" ]; then
-                    new_cfg=$(echo "$cfg" | sed 's/"cache_optimistic":[a-z]*/"cache_optimistic":false/')
-                    agh_api_post "http://127.0.0.1:$http_port/control/dns_config" "$new_cfg"
+                if [ "$opt_mode" != "force_off" ] && [ "$opt_mode" != "force_on" ]; then
+                    cfg=$(agh_api_get "http://127.0.0.1:$http_port/control/dns_info")
+                    if [ -n "$cfg" ]; then
+                        new_cfg=$(echo "$cfg" | sed 's/"cache_optimistic":[a-z]*/"cache_optimistic":false/')
+                        agh_api_post "http://127.0.0.1:$http_port/control/dns_config" "$new_cfg"
+                    fi
                 fi
                 agh_api_post "http://127.0.0.1:$http_port/control/cache_clear" ""
                 ndc resolver flushenv 2>/dev/null
-                echo "$(date '+%F %T') [VPN] 检测到 VPN 已稳定连接（通过防抖确认），已自动关闭乐观缓存并清空历史 DNS 缓存" >> "$MAIN_LOG"
+                if [ "$vpn_mode_cur" = "takeover" ]; then
+                    echo "$(date '+%F %T') [VPN] 检测到 VPN 已连接，智能识别为「回国加速去广告模式」（强制接管 DNS 并清空旧缓存）" >> "$MAIN_LOG"
+                else
+                    echo "$(date '+%F %T') [VPN] 检测到 VPN 已连接，智能识别为「翻墙出国防污染模式」（放行 VPN 隧道 DNS，由 SNI 拦截广告）" >> "$MAIN_LOG"
+                fi
             else
-                # 断开 VPN：自动恢复开启乐观缓存并清空旧 DNS 缓存，恢复澳洲本地秒开极速
-                cfg=$(agh_api_get "http://127.0.0.1:$http_port/control/dns_info")
-                if [ -n "$cfg" ]; then
-                    new_cfg=$(echo "$cfg" | sed 's/"cache_optimistic":[a-z]*/"cache_optimistic":true/')
-                    agh_api_post "http://127.0.0.1:$http_port/control/dns_config" "$new_cfg"
+                if [ "$opt_mode" != "force_off" ] && [ "$opt_mode" != "force_on" ]; then
+                    cfg=$(agh_api_get "http://127.0.0.1:$http_port/control/dns_info")
+                    if [ -n "$cfg" ]; then
+                        new_cfg=$(echo "$cfg" | sed 's/"cache_optimistic":[a-z]*/"cache_optimistic":true/')
+                        agh_api_post "http://127.0.0.1:$http_port/control/dns_config" "$new_cfg"
+                    fi
                 fi
                 agh_api_post "http://127.0.0.1:$http_port/control/cache_clear" ""
                 ndc resolver flushenv 2>/dev/null
-                echo "$(date '+%F %T') [VPN] 检测到 VPN 已稳定断开（通过防抖确认），已自动恢复乐观缓存并刷新本地 DNS" >> "$MAIN_LOG"
+                echo "$(date '+%F %T') [VPN] 检测到 VPN 已断开，已恢复默认直连模式并刷新本地 DNS" >> "$MAIN_LOG"
             fi
         fi
         vpn_status_last="$vpn_now"
