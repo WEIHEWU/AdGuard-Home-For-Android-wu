@@ -21,27 +21,23 @@ jobs:
       - name: Create GitHub Release and Upload Packages
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v20261027-Beta1
-          name: "AdGuard Home For Android 20261027-Beta1"
+          tag_name: v20261027-Beta2
+          name: "AdGuard Home For Android 20261027-Beta2"
           body: |
-            ### AdGuard Home For Android `20261027-Beta1`
+            ### AdGuard Home For Android `20261027-Beta2`
 
-            提供 **🌏 海外版 (Overseas)** 与 **🇨🇳 中国国内版 (CN)** 两个定制版本，均已内置最新配套的 **AdGuard Home Manager v2.24.9** 管理器应用。
+            提供 **🌏 海外版 (Overseas)** 与 **🇨🇳 中国国内版 (CN)** 两个定制版本，均已内置最新配套的 **AdGuard Home Manager v2.24.10** 管理器应用。
 
-            #### 🆕 20261027-Beta1 更新亮点
+            #### 🆕 20261027-Beta2 更新亮点
+            - **配套管理器 `v2.24.10` 首页与模块交互极简化重构**：
+              - 合并首页顶部两张卡片为单张极简主卡片：定时暂停收纳为开关左侧 `⏱️` 菜单，下方仅保留 **「误杀排错 · 应用白名单 · 网络刷新」** 三个高频按钮；
+              - 移除常态下的冗余状态标签与多行说明横幅，遵循「常态隐形、异常告警」原则——仅当检测到核心未运行或 DNS/SNI 转发异常时才显示单行橙色一键修复提示。
             - **彻底解决上游 `snifilter` 拦截 HTTPS 时 App 卡死/转圈 10~30 秒问题 (`iptables.sh`)**：
-              - 上游核心通过 NFQUEUE 伪造远端 IP 发送 TCP RST 时，Android 内核默认严格反向路径校验 (`rp_filter=1`) 会丢弃伪造 RST 包导致客户端干等超时重传；现已在启用 SNI 过滤时自动将 `rp_filter` 设为 `2`（宽松模式），被拦截的 HTTPS 广告连接毫秒级立即断开，大幅提升 App 首屏加载速度。
+              - 启用 SNI 过滤时自动将 `rp_filter` 设为 `2`（宽松模式），使 `snifilter` 伪造的 TCP RST 包不被内核丢弃，被拦截的 HTTPS 广告连接毫秒级立即断开。
             - **应用白名单升级为「内核级 UID 流量直通 + 前台感知」双引擎 (`iptables.sh`)**：
-              - 新增 `resolve_allowlist_uids` 与 `apply_uid_bypass_rules`：解析 `/data/adb/agh/app-allow.txt` 对应的应用 UID，在 `AGH_SNI`、`ADGUARD_DOT`、`ADGUARD`、`ADGUARD6_NAT`、`ADGUARD6` 链顶注入 `-m owner --uid-owner <uid> -j RETURN`，从内核层直接放行白名单应用的全部 DNS / DoT / SNI 流量（含后台推送与预加载）；
-              - 前台感知守护在暂停/恢复过滤时立即调用 `cache_clear` + `ndc resolver flushenv` 清空 DNS 缓存，并支持 `--apply-allowlist` 即刻热生效。
-            - **限制 Go 核心内存膨胀 + 固定默认端口 + 移除 `chattr +i` (`service.sh`)**：
-              - 注入 `GOMEMLIMIT=65MiB GOGC=50`，抑制上游 Go 核心加载大型规则后的内存暴涨，防止后台被系统杀进程；
-              - 优先使用固定端口 (`DNS=55453`, `HTTP=43000`)，仅在端口冲突重试时回退随机端口；移除导致配置修改丢失的 `chattr +i`；
-              - 60 秒守护循环新增 `AGH_SNI` 自检自愈，防止核心重启时内置 `startFirewall` 覆盖定制规则。
-            - **内置配套管理器升级至 `v2.24.9`**：
-              - 首页新增**「模块引擎与排错快捷台」**（实时展示 DNS 接管、SNI 嗅探、VPN 模式、核心内存占用，并提供**「🔍 误杀排错助手」**一键放行最近被拦域名、**「📱 应用白名单」**、**「⚡ 网络刷新」**）；
-              - 应用白名单支持显示中文应用名、真实图标与 UID，保存即刻生效；通知栏快捷磁贴支持端口变更自动重读恢复。
+              - 在 `AGH_SNI`、`ADGUARD_DOT`、`ADGUARD`、`ADGUARD6_NAT`、`ADGUARD6` 链顶注入 `-m owner --uid-owner <uid> -j RETURN`，从内核层直接放行白名单应用的全部 DNS / DoT / SNI 流量，保存即刻热生效。
+            - **限制 Go 核心内存膨胀 (`GOMEMLIMIT=65MiB`) + 固定默认端口 + 60s 规则自检自愈 (`service.sh`)**。
           files: |
-            releases/AdGuard_Home_For_Android_20261027_Beta1_Overseas.zip
-            releases/AdGuard_Home_For_Android_20261027_Beta1_CN.zip
+            releases/AdGuard_Home_For_Android_20261027_Beta2_Overseas.zip
+            releases/AdGuard_Home_For_Android_20261027_Beta2_CN.zip
             releases/AdGuardHomeManager.apk
