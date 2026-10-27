@@ -49,10 +49,12 @@ agh_api_post() {
     fi
 }
 
-# 1. 防止重复启动自身
-for pid in $(pidof -x "$0" 2>/dev/null); do
-    [ "$pid" != "$$" ] && exit 0
-done
+# 1. 防止重复启动后台守护自身（允许 --reload / --apply-allowlist 单次极速热重载）
+if [ "$1" != "--reload" ] && [ "$1" != "--apply-allowlist" ]; then
+    for pid in $(pidof -x "$0" 2>/dev/null); do
+        [ "$pid" != "$$" ] && exit 0
+    done
+fi
 
 # 2. 高效检测 AdGuardHome 是否存活 (O(1) 单次内核调用，校验进程名防 PID 复用误判)
 agh_running() {
@@ -74,7 +76,7 @@ agh_has_dedicated_gid() {
     [ -n "$agh_pid" ] && [ "$(awk '/^Gid:/ {print $2}' "/proc/$agh_pid/status" 2>/dev/null)" = "$AGH_GID" ]
 }
 
-# 3. 启动 AdGuardHome（以 uid=0, gid=23333 启动，保持完整 Root 权限同时与 netd 彻底隔离）
+# 3. 启动 AdGuardHome（以 uid=0, gid=23333 启动，保持完整 Root 权限同时与 netd 彻底隔离，并限制 Go 内存占用）
 start_agh() {
     {
         case "$(getprop persist.sys.locale 2>/dev/null)" in
@@ -82,6 +84,8 @@ start_agh() {
             *)   echo "$(date '+%F %T') [INFO] Starting AdGuardHome with dedicated group (uid=0, gid=$AGH_GID)..." ;;
         esac
     } >> "$MAIN_LOG"
+    export GOMEMLIMIT=65MiB
+    export GOGC=50
     export SSL_CERT_DIR="/system/etc/security/cacerts/"
     [ -s "$BIN_DIR/cacerts.pem" ] && export SSL_CERT_FILE="$BIN_DIR/cacerts.pem"
     if command -v busybox >/dev/null 2>&1 && busybox chpst -u 0:$AGH_GID true 2>/dev/null; then
@@ -139,7 +143,21 @@ dns_bypass_addrs() {
     ' "$BIN_DIR/AdGuardHome.yaml" 2>/dev/null
 }
 
-# 5. 精准 SNI 队列规则（首包严密盘查，承载数据流秒级直通）
+# 解析放行名单 (/data/adb/agh/app-allow.txt) 对应的 Android 应用 UID，实现内核层 0 延迟精准按应用分流
+get_allowlist_uids() {
+    [ -s "$AGH_DIR/app-allow.txt" ] && [ -r /data/system/packages.list ] || return 0
+    awk '
+        NR == FNR {
+            sub(/\r$/, "")
+            gsub(/^[[:space:]]+|[[:space:]]+$/, "")
+            if ($0 != "" && $0 !~ /^#/) allow[$0] = 1
+            next
+        }
+        ($1 in allow) && $2 ~ /^[0-9]+$/ { print $2 }
+    ' "$AGH_DIR/app-allow.txt" /data/system/packages.list 2>/dev/null | sort -u
+}
+
+# 5. 精准 SNI 队列规则（首包严密盘查，承载数据流秒级直通 + 宽松 rp_filter 彻底消灭 TCP RST 假死转圈）
 rebuild_sni() {
     # 彻底清理旧链
     iptables -w 2 -t filter -D OUTPUT -j AGH_SNI 2>/dev/null
@@ -149,19 +167,31 @@ rebuild_sni() {
     ip6tables -w 2 -t filter -F AGH_SNI 2>/dev/null
     ip6tables -w 2 -t filter -X AGH_SNI 2>/dev/null
 
-    # 如果用户在 config.prop 中显式关闭了 SNI 嗅探，则直接返回
+    # 同时遵循 config.prop 的 ENABLE_SNI 与 AdGuardHome.yaml 中的 sni_filter.enabled
     [ "$ENABLE_SNI" = "0" ] && return 0
+    sni_yaml_enabled=$(awk '/^sni_filter:/{f=1} f && /enabled:/{print $2; exit}' "$BIN_DIR/AdGuardHome.yaml" 2>/dev/null)
+    [ "$sni_yaml_enabled" = "false" ] && return 0
+
+    # 将所有网卡 rp_filter 设为宽松模式 (2)，根治上游核心 snifilter 发送伪造 TCP RST 时因严格反向路径校验失败导致 App 卡顿转圈 10~30 秒的顽疾
+    for rpf in /proc/sys/net/ipv4/conf/*/rp_filter; do
+        [ -w "$rpf" ] && echo 2 > "$rpf" 2>/dev/null
+    done
 
     sni_queue=$(sed -n 's/^[[:space:]]*queue_num:[[:space:]]*\([0-9][0-9]*\).*/\1/p' \
         "$BIN_DIR/AdGuardHome.yaml" 2>/dev/null | head -n 1)
     [ -z "$sni_queue" ] && sni_queue=7
     [ -z "$sni_ports" ] && sni_ports="443,8443"
+    allow_uids=$(get_allowlist_uids)
 
     # --- IPv4 SNI 链配置 ---
     iptables -w 2 -t filter -N AGH_SNI 2>/dev/null
     iptables -w 2 -t filter -A AGH_SNI -o lo -j RETURN
     # 始终豁免 AdGuardHome 自身进程 (uid 0 + gid 23333) 的出站 DoH 与规则订阅更新流量，免进 NFQUEUE 自嗅探
     iptables -w 2 -t filter -A AGH_SNI -m owner --uid-owner 0 --gid-owner "$AGH_GID" -j RETURN 2>/dev/null
+    # 内核级豁免放行名单内的应用 UID（0 延迟、全天候直通，不进 NFQUEUE 嗅探）
+    for auid in $allow_uids; do
+        iptables -w 2 -t filter -A AGH_SNI -m owner --uid-owner "$auid" -j RETURN 2>/dev/null
+    done
     # 局域网私有网段与广播直接快速放行（不跳过 198.18.0.0/15，确保即便走 Fake-IP 的连接也能在 TLS 握手首包识别并拦截广告 SNI）
     for net in 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 169.254.0.0/16 224.0.0.0/4 240.0.0.0/4 0.0.0.0/8; do
         iptables -w 2 -t filter -A AGH_SNI -p tcp -m multiport --dports "$sni_ports" -d "$net" -j RETURN
@@ -187,6 +217,9 @@ rebuild_sni() {
     ip6tables -w 2 -t filter -N AGH_SNI 2>/dev/null
     ip6tables -w 2 -t filter -A AGH_SNI -o lo -j RETURN
     ip6tables -w 2 -t filter -A AGH_SNI -m owner --uid-owner 0 --gid-owner "$AGH_GID" -j RETURN 2>/dev/null
+    for auid in $allow_uids; do
+        ip6tables -w 2 -t filter -A AGH_SNI -m owner --uid-owner "$auid" -j RETURN 2>/dev/null
+    done
     for net in ::1/128 fc00::/7 fe80::/10 ff00::/8; do
         ip6tables -w 2 -t filter -A AGH_SNI -p tcp -m multiport --dports "$sni_ports" -d "$net" -j RETURN
     done
@@ -206,7 +239,7 @@ rebuild_sni() {
 }
 
 # 5b. DoT / DoQ 加密 DNS 端口（853, 784, 8853）智能防绕过链
-# 仅豁免 AdGuardHome 自身 (uid 0 + gid 23333) 与 VPN 虚拟网卡 (tun+ / wg+)，防止 netd (uid 0, gid 0) 或外部 App 走 853 绕过本地过滤
+# 仅豁免 AdGuardHome 自身 (uid 0 + gid 23333)、放行名单应用 UID 与 VPN 虚拟网卡 (tun+ / wg+)，防止 netd (uid 0, gid 0) 或外部 App 走 853 绕过本地过滤
 rebuild_dot_guard() {
     while iptables -w 2 -t filter -D OUTPUT -j ADGUARD_DOT 2>/dev/null; do :; done
     iptables -w 2 -t filter -F ADGUARD_DOT 2>/dev/null
@@ -215,8 +248,13 @@ rebuild_dot_guard() {
     ip6tables -w 2 -t filter -F ADGUARD_DOT 2>/dev/null
     ip6tables -w 2 -t filter -X ADGUARD_DOT 2>/dev/null
 
+    allow_uids=$(get_allowlist_uids)
+
     iptables -w 2 -t filter -N ADGUARD_DOT 2>/dev/null
     iptables -w 2 -t filter -A ADGUARD_DOT -m owner --uid-owner 0 --gid-owner "$AGH_GID" -j RETURN 2>/dev/null
+    for auid in $allow_uids; do
+        iptables -w 2 -t filter -A ADGUARD_DOT -m owner --uid-owner "$auid" -j RETURN 2>/dev/null
+    done
     iptables -w 2 -t filter -A ADGUARD_DOT -o tun+ -j RETURN
     iptables -w 2 -t filter -A ADGUARD_DOT -o wg+ -j RETURN
     iptables -w 2 -t filter -A ADGUARD_DOT -p tcp -m multiport --dports 853,784,8853 -j REJECT --reject-with tcp-reset 2>/dev/null || \
@@ -227,6 +265,9 @@ rebuild_dot_guard() {
 
     ip6tables -w 2 -t filter -N ADGUARD_DOT 2>/dev/null
     ip6tables -w 2 -t filter -A ADGUARD_DOT -m owner --uid-owner 0 --gid-owner "$AGH_GID" -j RETURN 2>/dev/null
+    for auid in $allow_uids; do
+        ip6tables -w 2 -t filter -A ADGUARD_DOT -m owner --uid-owner "$auid" -j RETURN 2>/dev/null
+    done
     ip6tables -w 2 -t filter -A ADGUARD_DOT -o tun+ -j RETURN
     ip6tables -w 2 -t filter -A ADGUARD_DOT -o wg+ -j RETURN
     ip6tables -w 2 -t filter -A ADGUARD_DOT -p tcp -m multiport --dports 853,784,8853 -j REJECT --reject-with tcp-reset 2>/dev/null || \
@@ -314,6 +355,10 @@ apply_rules() {
     # 无论 WiFi / 回国 VPN 的 DNS 是否与上游 IP (如 1.1.1.1 / 8.8.8.8 / 223.5.5.5) 撞车，
     # netd 发起的 53 端口系统解析 100% 强制进入 AdGuardHome，同时 AGH 自身的 Bootstrap/上游请求永不自回环死锁！
     iptables -w 2 -t nat -A ADGUARD -m owner --uid-owner 0 --gid-owner "$AGH_GID" -j RETURN 2>/dev/null
+    # 应用放行名单 UID 级内核直通（豁免应用内置 DNS 解析器直连请求）
+    for auid in $(get_allowlist_uids); do
+        iptables -w 2 -t nat -A ADGUARD -m owner --uid-owner "$auid" -j RETURN 2>/dev/null
+    done
     if ! agh_has_dedicated_gid; then
         # 极端环境兜底：若 GID 未隔离，仅对非 53 端口放行，确保 netd 的 53 端口永不绕过
         for addr in $(dns_bypass_addrs); do
@@ -349,6 +394,9 @@ apply_rules() {
     ip6tables -w 2 -t nat -N ADGUARD6_NAT 2>/dev/null
     ip6tables -w 2 -t nat -F ADGUARD6_NAT 2>/dev/null
     ip6tables -w 2 -t nat -A ADGUARD6_NAT -m owner --uid-owner 0 --gid-owner "$AGH_GID" -j RETURN 2>/dev/null
+    for auid in $(get_allowlist_uids); do
+        ip6tables -w 2 -t nat -A ADGUARD6_NAT -m owner --uid-owner "$auid" -j RETURN 2>/dev/null
+    done
     if ip6tables -w 2 -t nat -A ADGUARD6_NAT -p udp --dport 53 -j REDIRECT --to-ports "$redir_port" 2>/dev/null && \
        ip6tables -w 2 -t nat -A ADGUARD6_NAT -p tcp --dport 53 -j REDIRECT --to-ports "$redir_port" 2>/dev/null; then
         ip6tables -w 2 -t nat -C OUTPUT -j ADGUARD6_NAT 2>/dev/null || ip6tables -w 2 -t nat -I OUTPUT 1 -j ADGUARD6_NAT 2>/dev/null
@@ -363,6 +411,9 @@ apply_rules() {
         ip6tables -w 2 -C OUTPUT -j ADGUARD6 2>/dev/null || ip6tables -w 2 -I OUTPUT 1 -j ADGUARD6
         ip6tables -w 2 -F ADGUARD6
         ip6tables -w 2 -A ADGUARD6 -m owner --uid-owner 0 --gid-owner "$AGH_GID" -j RETURN 2>/dev/null
+        for auid in $(get_allowlist_uids); do
+            ip6tables -w 2 -A ADGUARD6 -m owner --uid-owner "$auid" -j RETURN 2>/dev/null
+        done
         if ! ip6tables -w 2 -A ADGUARD6 -p udp --dport 53 -j REJECT --reject-with icmp6-port-unreachable 2>/dev/null; then
             ip6tables -w 2 -A ADGUARD6 -p udp --dport 53 -j DROP 2>/dev/null
         fi
@@ -593,8 +644,10 @@ check_app_allowlist() {
     if [ -n "$current" ] && grep -qxF "$current" "$AGH_DIR/app-allow.txt" 2>/dev/null; then
         if [ ! -f "$AGH_DIR/app_pause_active" ]; then
             agh_api_post "http://127.0.0.1:$http_port/control/protection" '{"enabled":false}'
+            agh_api_post "http://127.0.0.1:$http_port/control/cache_clear" ""
+            ndc resolver flushenv 2>/dev/null
             echo "1" > "$AGH_DIR/app_pause_active"
-            echo "$(date '+%F %T') [APP-ALLOW] 检测到放行应用在前台 ($current)，已自动暂停 DNS 过滤" >> "$MAIN_LOG"
+            echo "$(date '+%F %T') [APP-ALLOW] 检测到放行应用在前台 ($current)，已自动暂停 DNS 过滤并冲洗缓存" >> "$MAIN_LOG"
         fi
     else
         if [ -f "$AGH_DIR/app_pause_active" ]; then
@@ -646,6 +699,13 @@ sample_datachart() {
     fi
 }
 
+# 支持管理器即时触发单次规则重载与白名单刷新（无需重启守护循环）
+if [ "$1" = "--reload" ] || [ "$1" = "--apply-allowlist" ]; then
+    apply_rules
+    refresh_network
+    exit 0
+fi
+
 # --- 初始化执行 ---
 clean_legacy_conflicts
 clean_hotspot_rules
@@ -687,18 +747,24 @@ while true; do
 
         if ! agh_running; then
             start_agh
+            sleep 2
+            apply_rules
         elif ! agh_has_dedicated_gid; then
             killall -9 AdGuardHome 2>/dev/null || kill -9 $(pidof AdGuardHome 2>/dev/null) 2>/dev/null
             sleep 1
             start_agh
+            sleep 2
+            apply_rules
         fi
 
         # 每 60 秒轻量采样图表数据到 datachart.txt
         sample_datachart
 
-        # 检查 OUTPUT 挂载点与 ADGUARD 重定向规则是否被系统 netd 冲掉，若是则自动修复
+        # 检查 OUTPUT 挂载点、ADGUARD 重定向规则及 AGH_SNI 规则是否被系统 netd 或核心内置 startFirewall 冲掉，若是则自动修复
+        sni_active=$(awk '/^sni_filter:/{f=1} f && /enabled:/{print $2; exit}' "$BIN_DIR/AdGuardHome.yaml" 2>/dev/null)
         if ! iptables -w 2 -t nat -C OUTPUT -j ADGUARD 2>/dev/null || \
-           ! iptables -w 2 -t nat -C ADGUARD -p udp --dport 53 -j REDIRECT --to-ports "$redir_port" 2>/dev/null; then
+           ! iptables -w 2 -t nat -C ADGUARD -p udp --dport 53 -j REDIRECT --to-ports "$redir_port" 2>/dev/null || \
+           { [ "$sni_active" = "true" ] && ! iptables -w 2 -t filter -C AGH_SNI -o lo -j RETURN 2>/dev/null; }; then
             apply_rules
         fi
     fi

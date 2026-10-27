@@ -21,30 +21,27 @@ jobs:
       - name: Create GitHub Release and Upload Packages
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v20261026-Beta2
-          name: "AdGuard Home For Android 20261026-Beta2"
+          tag_name: v20261027-Beta1
+          name: "AdGuard Home For Android 20261027-Beta1"
           body: |
-            ### AdGuard Home For Android `20261026-Beta2`
+            ### AdGuard Home For Android `20261027-Beta1`
 
-            提供 **🌏 海外版 (Overseas)** 与 **🇨🇳 中国国内版 (CN)** 两个定制版本，均已内置最新配套的 **AdGuard Home Manager v2.24.8** 管理器应用。
+            提供 **🌏 海外版 (Overseas)** 与 **🇨🇳 中国国内版 (CN)** 两个定制版本，均已内置最新配套的 **AdGuard Home Manager v2.24.9** 管理器应用。
 
-            #### 🆕 20261026-Beta2 更新亮点
-            - **全自动零耗电 VPN 智能识别引擎 (`VPN_DNS_TAKEOVER=auto`) + 双向互备 `fallback_dns`**：
-              - **彻底告别手动开关**：仅在 VPN 开启瞬间执行一次本地毫秒级三层特征识别（1. 网卡 Fake-IP 网段 `198.18.0.0/15` / `172.19.0.0/16`；2. 回国加速器/翻墙代理进程特征；3. 手机当前物理蜂窝基站国家码 `gsm.operator.iso-country`），**0 网络发包、0 后台轮询、0 额外耗电、0 死循环风险**；
-              - **自动「回国加速去广告模式」**：检测到快帆、穿梭、Malus、Sixfast、QuickFox 等回国 VPN 或身处海外基站时，自动强制接管 VPN 53 端口 DNS，配合补齐的国内音视频/音乐/直播（B站、爱奇艺、优酷、腾讯视频、芒果TV、咪咕、央视频、网易云、QQ音乐、酷狗、酷我、汽水音乐、喜马拉雅、斗鱼、虎牙等）国内 DoH 分流，兼顾大陆版权解锁与 100% 广告拦截；
-              - **自动「翻墙出国防污染模式」**：检测到 Clash / Mihomo / Sing-box / v2rayNG 等翻墙工具或身处中国大陆基站（含海外卡漫游回国）时，自动放行 Fake-IP 与 VPN 隧道 53 端口防止国内 DNS 污染，同时由 **`AGH_SNI` 443 握手首包嗅探链**（涵盖 `198.18.0.0/15` 网段）通过 TLS `ClientHello` 明文域名精准拦截广告；
-              - **跨国出行双向互备 `fallback_dns`**：海外版新增阿里/腾讯 DoH 作为 `fallback_dns`（回国探亲直连不断网），国内版新增 Cloudflare/Google DoH 作为 `fallback_dns`（出国旅游直连不断网），平时 0 额外请求。
-            - **覆盖升级自动保留个人自定义规则与配置 (`customize.sh`)**：
-              - 刷入新版本时自动从备份提取并合并个人自定义规则与后台密码（同时自动清理已知的 `1e100.net` 过宽白名单），并完整保留 `config.prop` 的所有开关。
-            - **纯 IPv6 (464XLAT) 移动网络不断网保护 (`iptables.sh`)**：
-              - IPv6 53 端口优先采用 `ip6tables -t nat REDIRECT` 重定向至本地 AGH 端口，防止 Telstra 等纯 IPv6 移动网络下断网；同时新增 `AGH_INPUT` 链防止局域网外部设备滥用本机 DNS 端口。
-            - **全 ROM 兼容性与省电加固 (`iptables.sh` & `NoAdsService.sh`)**：
-              - 新增 `curl` 缺失自动回退 `busybox wget` 机制；
-              - 前台放行应用探测优先读取零开销 `/dev/cpuset/top-app/cgroup.procs`，并在启动时自动复位异常残留的暂停状态；
-              - 移除 `NoAdsService.sh` 中可能误删应用配置或登录态的 6 条宽泛路径。
-            - **包含 `20261026-Beta1` 全部修复**：
-              - 专属用户组 (`uid=0, gid=23333`) 物理隔离 `AdGuardHome` 与系统 `netd (uid=0, gid=0)`，彻底根治公共 DNS 撞车漏拦问题。
+            #### 🆕 20261027-Beta1 更新亮点
+            - **彻底解决上游 `snifilter` 拦截 HTTPS 时 App 卡死/转圈 10~30 秒问题 (`iptables.sh`)**：
+              - 上游核心通过 NFQUEUE 伪造远端 IP 发送 TCP RST 时，Android 内核默认严格反向路径校验 (`rp_filter=1`) 会丢弃伪造 RST 包导致客户端干等超时重传；现已在启用 SNI 过滤时自动将 `rp_filter` 设为 `2`（宽松模式），被拦截的 HTTPS 广告连接毫秒级立即断开，大幅提升 App 首屏加载速度。
+            - **应用白名单升级为「内核级 UID 流量直通 + 前台感知」双引擎 (`iptables.sh`)**：
+              - 新增 `resolve_allowlist_uids` 与 `apply_uid_bypass_rules`：解析 `/data/adb/agh/app-allow.txt` 对应的应用 UID，在 `AGH_SNI`、`ADGUARD_DOT`、`ADGUARD`、`ADGUARD6_NAT`、`ADGUARD6` 链顶注入 `-m owner --uid-owner <uid> -j RETURN`，从内核层直接放行白名单应用的全部 DNS / DoT / SNI 流量（含后台推送与预加载）；
+              - 前台感知守护在暂停/恢复过滤时立即调用 `cache_clear` + `ndc resolver flushenv` 清空 DNS 缓存，并支持 `--apply-allowlist` 即刻热生效。
+            - **限制 Go 核心内存膨胀 + 固定默认端口 + 移除 `chattr +i` (`service.sh`)**：
+              - 注入 `GOMEMLIMIT=65MiB GOGC=50`，抑制上游 Go 核心加载大型规则后的内存暴涨，防止后台被系统杀进程；
+              - 优先使用固定端口 (`DNS=55453`, `HTTP=43000`)，仅在端口冲突重试时回退随机端口；移除导致配置修改丢失的 `chattr +i`；
+              - 60 秒守护循环新增 `AGH_SNI` 自检自愈，防止核心重启时内置 `startFirewall` 覆盖定制规则。
+            - **内置配套管理器升级至 `v2.24.9`**：
+              - 首页新增**「模块引擎与排错快捷台」**（实时展示 DNS 接管、SNI 嗅探、VPN 模式、核心内存占用，并提供**「🔍 误杀排错助手」**一键放行最近被拦域名、**「📱 应用白名单」**、**「⚡ 网络刷新」**）；
+              - 应用白名单支持显示中文应用名、真实图标与 UID，保存即刻生效；通知栏快捷磁贴支持端口变更自动重读恢复。
           files: |
-            releases/AdGuard_Home_For_Android_20261026_Beta2_Overseas.zip
-            releases/AdGuard_Home_For_Android_20261026_Beta2_CN.zip
+            releases/AdGuard_Home_For_Android_20261027_Beta1_Overseas.zip
+            releases/AdGuard_Home_For_Android_20261027_Beta1_CN.zip
             releases/AdGuardHomeManager.apk

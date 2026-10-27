@@ -85,7 +85,7 @@ build_ca_bundle() {
     fi
 }
 
-# 动态端口随机化与安全启动（带 3 次重试熔断防护，杜绝卡米死循环）
+# 优先使用稳定默认端口（DNS: 55453, Web: 43000），仅在端口被占用或重试时回退随机端口，带 3 次重试熔断防护
 if ! agh_running; then
     build_ca_bundle
     MAX_TRIES=3
@@ -94,7 +94,15 @@ if ! agh_running; then
         try_count=$((try_count + 1))
         [ "$lang" = "zh" ] && echo "$(date '+%F %T') 正在启动 AdGuardHome (尝试 $try_count/$MAX_TRIES)..." >> "$MAIN_LOG" || echo "$(date '+%F %T') Starting AdGuardHome (attempt $try_count/$MAX_TRIES)..." >> "$MAIN_LOG"
 
-        R1=$((30000+RANDOM%35536)); R2=$((30000+RANDOM%35536))
+        if [ "$try_count" -eq 1 ] && \
+           ! grep -qi ":D89D " /proc/net/udp /proc/net/udp6 2>/dev/null && \
+           ! grep -qi ":A7F8 " /proc/net/tcp /proc/net/tcp6 2>/dev/null; then
+            R1=55453
+            R2=43000
+        else
+            R1=$((30000+RANDOM%35536))
+            R2=$((30000+RANDOM%35536))
+        fi
         sed -i "/^dns:/,/^[^[:space:]]/ s/^\([[:space:]]*port:\) [0-9]*/\1 $R1/; s/^\([[:space:]]*address:\) 127\.0\.0\.1:[0-9]*/\1 127.0.0.1:$R2/" "$BIN_DIR/AdGuardHome.yaml"
         sed -i "s/^redir_port=.*/redir_port=$R1/" "$SCRIPT_DIR/config.prop"
 
@@ -107,7 +115,9 @@ if ! agh_running; then
             sed -i '/^sni_filter:/,/^[^[:space:]]/ s/^\([[:space:]]*enabled:\) true/\1 false/' "$BIN_DIR/AdGuardHome.yaml"
         fi
 
-        # 启动AdGuardHome（绑定专属 GID 23333，与系统 netd [uid=0,gid=0] 彻底物理隔离）
+        # 启动AdGuardHome（绑定专属 GID 23333，与系统 netd [uid=0,gid=0] 彻底物理隔离；注入 GOMEMLIMIT 限制 Go 核心常驻内存）
+        export GOMEMLIMIT=65MiB
+        export GOGC=50
         export SSL_CERT_DIR="/system/etc/security/cacerts/"
         [ -s "$CA_BUNDLE" ] && export SSL_CERT_FILE="$CA_BUNDLE"
         if command -v busybox >/dev/null 2>&1 && busybox chpst -u 0:$AGH_GID true 2>/dev/null; then
@@ -134,7 +144,7 @@ if ! agh_running; then
         if agh_running; then
             agh_real_pid=$(pidof AdGuardHome 2>/dev/null | awk '{print $1}')
             [ -n "$agh_real_pid" ] && echo "$agh_real_pid" > "$BIN_DIR/AdGuardHome.pid"
-            [ "$lang" = "zh" ] && echo "$(date '+%F %T') AdGuardHome 启动成功 (PID=${agh_real_pid:-unknown}, GID=$AGH_GID)。" >> "$MAIN_LOG" || echo "$(date '+%F %T') AdGuardHome started successfully (PID=${agh_real_pid:-unknown}, GID=$AGH_GID)." >> "$MAIN_LOG"
+            [ "$lang" = "zh" ] && echo "$(date '+%F %T') AdGuardHome 启动成功 (PID=${agh_real_pid:-unknown}, GID=$AGH_GID, DNS=$R1, HTTP=$R2)。" >> "$MAIN_LOG" || echo "$(date '+%F %T') AdGuardHome started successfully (PID=${agh_real_pid:-unknown}, GID=$AGH_GID, DNS=$R1, HTTP=$R2)." >> "$MAIN_LOG"
             break
         fi
     done
@@ -149,9 +159,6 @@ fi
 "$SCRIPT_DIR/iptables.sh" &
 "$SCRIPT_DIR/NoAdsService.sh" &
 "$SCRIPT_DIR/ProxyConfig.sh" &
-
-# 执行脚本防篡改保护
-find "$ADGPATH" -type f -name "*.sh" -exec chattr +i {} \;
 
 # 日志超限时清空
 [ "$(wc -c < "$MAIN_LOG")" -ge 102400 ] && : > "$MAIN_LOG"
