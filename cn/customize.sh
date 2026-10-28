@@ -49,13 +49,6 @@ while true; do
 done
 fi
 
-# 删除被锁定的残留文件
-[ -f "$AGH_DIR/scripts/NoAdsService.sh" ] && {
-    i18n_print "- Removing locked residual files" "- 正在删除被锁定的残留文件"
-    c=0 u=0; _traverse() { if [ -f "$1" ]; then chattr -i "$1"; rm -f "$1"; c=$((c+1)); u=$((u+1)); elif [ -d "$1" ]; then for f in "$1"/*; do [ -e "$f" ] && _traverse "$f"; done; chattr -i "$1"; rmdir "$1" && c=$((c+1)) && u=$((u+1)); fi; }; while IFS= read -r line; do case "$line" in *block_ad*) path="${line#*\"}"; path="${path%%\"*}"; [ -n "$path" ] && [ -e "$path" ] && _traverse "$path";; esac; done < "$AGH_DIR/scripts/NoAdsService.sh"
-    i18n_print "- Removed $u locked files out of $c scanned items" "- 从 $c 个文件中删除了 $u 个锁定文件"
-}
-
 # 检查是否首次安装
 if [ -d "$AGH_DIR" ]; then
   i18n_print "- Backing up configuration" "- 正在备份配置文件"
@@ -65,10 +58,9 @@ if [ -d "$AGH_DIR" ]; then
   [ -f "$SCRIPT_DIR/NoAdsService.sh" ] && cp -f "$SCRIPT_DIR/NoAdsService.sh" "$BACKUP_DIR/"
 fi
 
-# 解锁脚本防篡改保护
+# 解锁旧版可能残留的脚本防篡改属性
 if [ -d "$SCRIPT_DIR" ]; then
-    i18n_print "- Unlocking old script files" "- 正在解锁旧脚本文件"
-    find "$AGH_DIR/scripts" "$ADGPATH" -type f -name "*.sh" -exec chattr -i {} \;
+    find "$AGH_DIR/scripts" "$ADGPATH" -type f -name "*.sh" -exec chattr -i {} \; 2>/dev/null
 fi
 
 # 清除旧模块残留
@@ -91,10 +83,6 @@ chown root:net_raw "$BIN_DIR/AdGuardHome"
 # 立即执行一次性安全解锁与广告缓存清理（主用户，零死循环，解除所有历史锁死）
 i18n_print "- Unlocking app directories & cleaning legacy ad caches..." "- 正在全面解锁应用目录并安全清理旧广告缓存..."
 sh "$SCRIPT_DIR/NoAdsService.sh" >/dev/null 2>&1
-
-# 执行脚本防篡改保护
-i18n_print "- Locking script files" "- 正在锁定脚本文件"
-find "$SCRIPT_DIR" -type f -name "*.sh" -exec chattr +i {} \;
 
 # 清理旧版本可能残留的冲突规则与策略路由
 ip rule del pref 99 2>/dev/null
@@ -124,7 +112,7 @@ if [ -f "$BACKUP_DIR/AdGuardHome.yaml" ] && [ -f "$BIN_DIR/AdGuardHome.yaml" ]; 
         escaped_pwd=$(printf '%s' "$old_pwd" | sed 's/[&|]/\\&/g')
         sed -i "s|^\([[:space:]]*password:[[:space:]]*\).*|\1$escaped_pwd|" "$BIN_DIR/AdGuardHome.yaml" 2>/dev/null
     fi
-    # 2. 提取用户在旧版中自行添加的自定义规则（自动过滤已被移除的 1e100.net 过宽白名单），合并至新版配置
+    # 2. 提取用户在旧版中自行添加的自定义规则（自动过滤已被移除的 1e100.net 过宽白名单），合并至新版配置 user_rules 末尾（^filtering: 之前）
     awk '
         /^user_rules:/ { in_rules = 1; next }
         in_rules && /^[^[:space:]#]/ { in_rules = 0 }
@@ -138,7 +126,7 @@ if [ -f "$BACKUP_DIR/AdGuardHome.yaml" ] && [ -f "$BIN_DIR/AdGuardHome.yaml" ]; 
         [ -z "$urule" ] && continue
         if ! grep -qF "$urule" "$BIN_DIR/AdGuardHome.yaml" 2>/dev/null; then
             escaped_rule=$(printf '%s' "$urule" | sed "s/'/''/g")
-            sed -i "/^tls:/i\\
+            sed -i "/^filtering:/i\\
   - '$escaped_rule'" "$BIN_DIR/AdGuardHome.yaml" 2>/dev/null
         fi
     done
@@ -158,7 +146,7 @@ if [ -f "$BACKUP_DIR/config.prop" ]; then
         echo "OPTIMISTIC_CACHE_MODE=\"$old_mode\"" >> "$SCRIPT_DIR/config.prop"
         i18n_print "- Preserved OPTIMISTIC_CACHE_MODE from backup" "- 已从备份恢复 OPTIMISTIC_CACHE_MODE"
     fi
-    for key in ENABLE_SNI sni_ports; do
+    for key in ENABLE_SNI sni_ports VPN_DNS_TAKEOVER; do
         old_val=$(sed -n "s/^${key}=//p" "$BACKUP_DIR/config.prop" | head -n 1)
         if [ -n "$old_val" ]; then
             sed -i "s|^${key}=.*|${key}=${old_val}|" "$SCRIPT_DIR/config.prop" 2>/dev/null

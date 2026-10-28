@@ -30,23 +30,25 @@ dns:
   ratelimit_whitelist: []
   refuse_any: true
   upstream_dns:
+    - https://223.5.5.5/dns-query
     - https://1.12.12.12/dns-query
     - https://120.53.53.53/dns-query
   upstream_dns_file: ""
   bootstrap_dns:
-    - 180.184.1.1
-    - 180.184.2.2
     - 223.5.5.5
     - 119.29.29.29
-    - 2400:7fc0:849e:200::4
-    - 2404:c2c0:85d8:901::4
+    - 223.6.6.6
+    - 1.1.1.1
+    - 8.8.8.8
+    - 2400:3200::1
+    - 2402:4e00::
   fallback_dns:
-    - https://101.226.4.6/dns-query
-    - https://218.30.118.6/dns-query
-    - https://123.125.81.6/dns-query
+    - https://223.5.5.5/dns-query
+    - https://223.6.6.6/dns-query
+    - https://1.12.12.12/dns-query
     - https://1.1.1.1/dns-query
     - https://8.8.8.8/dns-query
-  upstream_mode: load_balance
+  upstream_mode: parallel
   fastest_timeout: 1s
   allowed_clients: []
   disallowed_clients: []
@@ -58,7 +60,7 @@ dns:
     - 127.0.0.0/8
     - ::1/128
   cache_enabled: true
-  cache_size: 52428800
+  cache_size: 4194304
   cache_ttl_min: 600
   cache_ttl_max: 3600
   cache_optimistic: true
@@ -71,12 +73,12 @@ dns:
     custom_ip: ""
     enabled: true
     use_custom: false
-  max_goroutines: 300
+  max_goroutines: 100
   handle_ddr: true
   ipset: []
   ipset_file: ""
   bootstrap_prefer_ipv6: false
-  upstream_timeout: 10s
+  upstream_timeout: 5s
   private_networks: []
   use_private_ptr_resolvers: false
   local_ptr_upstreams: []
@@ -1522,7 +1524,7 @@ filtering:
   rewrites: []
   safe_fs_patterns:
     - /data/adb/agh/bin/data/userfilters/*
-  max_http_size: 256MB
+  max_http_size: 32MB
   safebrowsing_cache_size: 1048576
   parental_cache_size: 1048576
   cache_time: 30

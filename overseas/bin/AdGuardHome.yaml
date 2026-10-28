@@ -77,7 +77,7 @@ dns:
     - 127.0.0.0/8
     - ::1/128
   cache_enabled: true
-  cache_size: 52428800
+  cache_size: 4194304
   cache_ttl_min: 600
   cache_ttl_max: 3600
   cache_optimistic: true
@@ -90,12 +90,12 @@ dns:
     custom_ip: ""
     enabled: true
     use_custom: false
-  max_goroutines: 300
+  max_goroutines: 100
   handle_ddr: true
   ipset: []
   ipset_file: ""
   bootstrap_prefer_ipv6: false
-  upstream_timeout: 10s
+  upstream_timeout: 5s
   private_networks: []
   use_private_ptr_resolvers: false
   local_ptr_upstreams: []
@@ -1541,7 +1541,7 @@ filtering:
   rewrites: []
   safe_fs_patterns:
     - /data/adb/agh/bin/data/userfilters/*
-  max_http_size: 256MB
+  max_http_size: 32MB
   safebrowsing_cache_size: 1048576
   parental_cache_size: 1048576
   cache_time: 30

@@ -1,4 +1,5 @@
 #!/system/bin/sh
+trap '' HUP
 SCRIPT_DIR="/data/adb/agh/scripts"
 ADGPATH="/data/adb/modules/AdGuardHome"
 AGH_DIR="/data/adb/agh"
@@ -114,6 +115,12 @@ if ! agh_running; then
         else
             sed -i '/^sni_filter:/,/^[^[:space:]]/ s/^\([[:space:]]*enabled:\) true/\1 false/' "$BIN_DIR/AdGuardHome.yaml"
         fi
+
+        # 启动前预先将所有网卡（含 all / default / lo）rp_filter 设为宽松模式 (2)，
+        # 既消除核心启动时 checkReversePathFilter 严格模式告警，又确保软重启/切网新建网卡自动继承宽松校验
+        for rpf in /proc/sys/net/ipv4/conf/*/rp_filter; do
+            [ -w "$rpf" ] && echo 2 > "$rpf" 2>/dev/null
+        done
 
         # 启动AdGuardHome（绑定专属 GID 23333，与系统 netd [uid=0,gid=0] 彻底物理隔离；注入 GOMEMLIMIT 限制 Go 核心常驻内存）
         export GOMEMLIMIT=65MiB

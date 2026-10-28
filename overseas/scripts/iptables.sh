@@ -9,6 +9,9 @@
 # 4. IPv6 DNS 阻断由 DROP 改为秒级 REJECT，彻底消灭应用打开时“假死转圈 2 秒”的等待
 # ==============================================================================
 
+# 屏蔽软重启 (Soft Reboot) 期间父进程派发的 SIGHUP 信号，确保临时 Root 下后台守护与核心不掉线
+trap '' HUP
+
 AGH_DIR="/data/adb/agh"
 BIN_DIR="$AGH_DIR/bin"
 MAIN_LOG="$AGH_DIR/agh.log"
@@ -19,7 +22,7 @@ export PATH="/data/adb/ksu/bin:/data/adb/ap/bin:/data/adb/magisk:$PATH"
 [ -f "$AGH_DIR/scripts/config.prop" ] && . "$AGH_DIR/scripts/config.prop"
 redir_port=${redir_port:-31587}
 ENABLE_SNI=${ENABLE_SNI:-1}
-VPN_DNS_TAKEOVER=${VPN_DNS_TAKEOVER:-1}
+VPN_DNS_TAKEOVER=${VPN_DNS_TAKEOVER:-auto}
 
 # 统一 HTTP 调用封装：优先使用 curl，若 ROM 未内置 curl 则自动回退至 busybox wget / wget
 agh_api_get() {
@@ -49,10 +52,13 @@ agh_api_post() {
     fi
 }
 
-# 1. 防止重复启动后台守护自身（允许 --reload / --apply-allowlist 单次极速热重载）
+# 1. 防止重复启动后台守护自身（允许 --reload / --apply-allowlist 单次极速热重载；若软重启重新触发本脚本，先重载规则再退出）
 if [ "$1" != "--reload" ] && [ "$1" != "--apply-allowlist" ]; then
     for pid in $(pidof -x "$0" 2>/dev/null); do
-        [ "$pid" != "$$" ] && exit 0
+        if [ "$pid" != "$$" ]; then
+            "$0" --reload >/dev/null 2>&1
+            exit 0
+        fi
     done
 fi
 
@@ -84,6 +90,9 @@ start_agh() {
             *)   echo "$(date '+%F %T') [INFO] Starting AdGuardHome with dedicated group (uid=0, gid=$AGH_GID)..." ;;
         esac
     } >> "$MAIN_LOG"
+    for rpf in /proc/sys/net/ipv4/conf/*/rp_filter; do
+        [ -w "$rpf" ] && echo 2 > "$rpf" 2>/dev/null
+    done
     export GOMEMLIMIT=65MiB
     export GOGC=50
     export SSL_CERT_DIR="/system/etc/security/cacerts/"
@@ -239,8 +248,10 @@ rebuild_sni() {
 }
 
 # 5b. DoT / DoQ 加密 DNS 端口（853, 784, 8853）智能防绕过链
-# 仅豁免 AdGuardHome 自身 (uid 0 + gid 23333)、放行名单应用 UID 与 VPN 虚拟网卡 (tun+ / wg+)，防止 netd (uid 0, gid 0) 或外部 App 走 853 绕过本地过滤
+# 仅豁免 AdGuardHome 自身 (uid 0 + gid 23333)、放行名单应用 UID，以及「翻墙出国防污染模式」下的 VPN 虚拟网卡 (tun+ / wg+ / ppp+)；
+# 在「回国加速模式」或未开 VPN 时拦截 853/784/8853，强制 netd 回退至 53 端口进入 AdGuardHome 过滤国内视频广告
 rebuild_dot_guard() {
+    takeover_mode="${1:-0}"
     while iptables -w 2 -t filter -D OUTPUT -j ADGUARD_DOT 2>/dev/null; do :; done
     iptables -w 2 -t filter -F ADGUARD_DOT 2>/dev/null
     iptables -w 2 -t filter -X ADGUARD_DOT 2>/dev/null
@@ -255,8 +266,11 @@ rebuild_dot_guard() {
     for auid in $allow_uids; do
         iptables -w 2 -t filter -A ADGUARD_DOT -m owner --uid-owner "$auid" -j RETURN 2>/dev/null
     done
-    iptables -w 2 -t filter -A ADGUARD_DOT -o tun+ -j RETURN
-    iptables -w 2 -t filter -A ADGUARD_DOT -o wg+ -j RETURN
+    if [ "$takeover_mode" != "0" ]; then
+        iptables -w 2 -t filter -A ADGUARD_DOT -o tun+ -j RETURN
+        iptables -w 2 -t filter -A ADGUARD_DOT -o wg+ -j RETURN
+        iptables -w 2 -t filter -A ADGUARD_DOT -o ppp+ -j RETURN
+    fi
     iptables -w 2 -t filter -A ADGUARD_DOT -p tcp -m multiport --dports 853,784,8853 -j REJECT --reject-with tcp-reset 2>/dev/null || \
         iptables -w 2 -t filter -A ADGUARD_DOT -p tcp -m multiport --dports 853,784,8853 -j DROP 2>/dev/null
     iptables -w 2 -t filter -A ADGUARD_DOT -p udp -m multiport --dports 853,784,8853 -j REJECT --reject-with icmp-port-unreachable 2>/dev/null || \
@@ -268,8 +282,11 @@ rebuild_dot_guard() {
     for auid in $allow_uids; do
         ip6tables -w 2 -t filter -A ADGUARD_DOT -m owner --uid-owner "$auid" -j RETURN 2>/dev/null
     done
-    ip6tables -w 2 -t filter -A ADGUARD_DOT -o tun+ -j RETURN
-    ip6tables -w 2 -t filter -A ADGUARD_DOT -o wg+ -j RETURN
+    if [ "$takeover_mode" != "0" ]; then
+        ip6tables -w 2 -t filter -A ADGUARD_DOT -o tun+ -j RETURN
+        ip6tables -w 2 -t filter -A ADGUARD_DOT -o wg+ -j RETURN
+        ip6tables -w 2 -t filter -A ADGUARD_DOT -o ppp+ -j RETURN
+    fi
     ip6tables -w 2 -t filter -A ADGUARD_DOT -p tcp -m multiport --dports 853,784,8853 -j REJECT --reject-with tcp-reset 2>/dev/null || \
         ip6tables -w 2 -t filter -A ADGUARD_DOT -p tcp -m multiport --dports 853,784,8853 -j DROP 2>/dev/null
     ip6tables -w 2 -t filter -A ADGUARD_DOT -p udp -m multiport --dports 853,784,8853 -j REJECT --reject-with icmp6-port-unreachable 2>/dev/null || \
@@ -302,9 +319,11 @@ should_takeover_vpn_dns() {
         return 0
     fi
 
-    # 第一层（最快最准）：检查虚拟网卡 IP 与路由是否包含 Fake-IP / Sing-box / Clash 专用网段 (198.18.0.0/15, 172.19.0.0/16)
+    # 第一层（最快最准）：检查虚拟网卡 IP 与路由是否包含 Fake-IP / Sing-box / Clash 专用网段 (IPv4: 198.18.0.0/15, 172.19.0.0/16; IPv6: fc00::/18, fdfe:dcba:9876::/48)
     if ip -4 addr show 2>/dev/null | grep -qE '198\.18\.|172\.19\.' || \
-       ip -4 route show table all 2>/dev/null | grep -qE '198\.18\.|172\.19\.'; then
+       ip -4 route show table all 2>/dev/null | grep -qE '198\.18\.|172\.19\.' || \
+       ip -6 addr show 2>/dev/null | grep -qiE 'fdfe:dcba:9876|fc00::' || \
+       ip -6 route show table all 2>/dev/null | grep -qiE 'fdfe:dcba:9876|fc00::/18'; then
         echo "bypass" > "$AGH_DIR/vpn_mode_status" 2>/dev/null
         return 1
     fi
@@ -347,6 +366,10 @@ should_takeover_vpn_dns() {
 
 # 6. 应用高效 DNS 重定向规则
 apply_rules() {
+    allow_uids=$(get_allowlist_uids)
+    should_takeover_vpn_dns
+    takeover_vpn=$?
+
     # 建立 IPv4 DNS 重定向
     iptables -w 2 -t nat -N ADGUARD 2>/dev/null
     iptables -w 2 -t nat -C OUTPUT -j ADGUARD 2>/dev/null || iptables -w 2 -t nat -I OUTPUT 1 -j ADGUARD
@@ -356,7 +379,7 @@ apply_rules() {
     # netd 发起的 53 端口系统解析 100% 强制进入 AdGuardHome，同时 AGH 自身的 Bootstrap/上游请求永不自回环死锁！
     iptables -w 2 -t nat -A ADGUARD -m owner --uid-owner 0 --gid-owner "$AGH_GID" -j RETURN 2>/dev/null
     # 应用放行名单 UID 级内核直通（豁免应用内置 DNS 解析器直连请求）
-    for auid in $(get_allowlist_uids); do
+    for auid in $allow_uids; do
         iptables -w 2 -t nat -A ADGUARD -m owner --uid-owner "$auid" -j RETURN 2>/dev/null
     done
     if ! agh_has_dedicated_gid; then
@@ -372,7 +395,7 @@ apply_rules() {
         done
     fi
     # 根据纯本地智能识别结果动态配置 VPN DNS 策略：
-    if should_takeover_vpn_dns; then
+    if [ "$takeover_vpn" -eq 0 ]; then
         # 回国加速接管模式（或未开 VPN）：仅保留 Fake-IP 静态网段兜底，tun+ 上的 53 端口 DNS 全部强制接管进 AdGuardHome
         iptables -w 2 -t nat -A ADGUARD -d 198.18.0.0/15 -j RETURN 2>/dev/null
         iptables -w 2 -t nat -A ADGUARD -d 172.19.0.0/16 -j RETURN 2>/dev/null
@@ -390,13 +413,23 @@ apply_rules() {
     iptables -w 2 -t nat -A ADGUARD -p udp --dport 53 -j REDIRECT --to-ports "$redir_port"
     iptables -w 2 -t nat -A ADGUARD -p tcp --dport 53 -j REDIRECT --to-ports "$redir_port"
 
-    # 建立 IPv6 DNS 接管链：优先使用 ip6tables nat REDIRECT（防 Telstra 等纯 IPv6/464XLAT 移动网络断网），不支持时自动回退 REJECT
+    # 建立 IPv6 DNS 接管链：优先使用 ip6tables nat REDIRECT（防 Telstra 等纯 IPv6/464XLAT 移动网络断网），并同步豁免 IPv6 Fake-IP 与翻墙 VPN 隧道，不支持时自动回退 REJECT
     ip6tables -w 2 -t nat -N ADGUARD6_NAT 2>/dev/null
     ip6tables -w 2 -t nat -F ADGUARD6_NAT 2>/dev/null
     ip6tables -w 2 -t nat -A ADGUARD6_NAT -m owner --uid-owner 0 --gid-owner "$AGH_GID" -j RETURN 2>/dev/null
-    for auid in $(get_allowlist_uids); do
+    for auid in $allow_uids; do
         ip6tables -w 2 -t nat -A ADGUARD6_NAT -m owner --uid-owner "$auid" -j RETURN 2>/dev/null
     done
+    ip6tables -w 2 -t nat -A ADGUARD6_NAT -d fc00::/18 -j RETURN 2>/dev/null
+    ip6tables -w 2 -t nat -A ADGUARD6_NAT -d fdfe:dcba:9876::/48 -j RETURN 2>/dev/null
+    if [ "$takeover_vpn" -ne 0 ]; then
+        ip6tables -w 2 -t nat -A ADGUARD6_NAT -o tun+ -p udp --dport 53 -j RETURN 2>/dev/null
+        ip6tables -w 2 -t nat -A ADGUARD6_NAT -o tun+ -p tcp --dport 53 -j RETURN 2>/dev/null
+        ip6tables -w 2 -t nat -A ADGUARD6_NAT -o wg+ -p udp --dport 53 -j RETURN 2>/dev/null
+        ip6tables -w 2 -t nat -A ADGUARD6_NAT -o wg+ -p tcp --dport 53 -j RETURN 2>/dev/null
+        ip6tables -w 2 -t nat -A ADGUARD6_NAT -o ppp+ -p udp --dport 53 -j RETURN 2>/dev/null
+        ip6tables -w 2 -t nat -A ADGUARD6_NAT -o ppp+ -p tcp --dport 53 -j RETURN 2>/dev/null
+    fi
     if ip6tables -w 2 -t nat -A ADGUARD6_NAT -p udp --dport 53 -j REDIRECT --to-ports "$redir_port" 2>/dev/null && \
        ip6tables -w 2 -t nat -A ADGUARD6_NAT -p tcp --dport 53 -j REDIRECT --to-ports "$redir_port" 2>/dev/null; then
         ip6tables -w 2 -t nat -C OUTPUT -j ADGUARD6_NAT 2>/dev/null || ip6tables -w 2 -t nat -I OUTPUT 1 -j ADGUARD6_NAT 2>/dev/null
@@ -411,9 +444,19 @@ apply_rules() {
         ip6tables -w 2 -C OUTPUT -j ADGUARD6 2>/dev/null || ip6tables -w 2 -I OUTPUT 1 -j ADGUARD6
         ip6tables -w 2 -F ADGUARD6
         ip6tables -w 2 -A ADGUARD6 -m owner --uid-owner 0 --gid-owner "$AGH_GID" -j RETURN 2>/dev/null
-        for auid in $(get_allowlist_uids); do
+        for auid in $allow_uids; do
             ip6tables -w 2 -A ADGUARD6 -m owner --uid-owner "$auid" -j RETURN 2>/dev/null
         done
+        ip6tables -w 2 -A ADGUARD6 -d fc00::/18 -j RETURN 2>/dev/null
+        ip6tables -w 2 -A ADGUARD6 -d fdfe:dcba:9876::/48 -j RETURN 2>/dev/null
+        if [ "$takeover_vpn" -ne 0 ]; then
+            ip6tables -w 2 -A ADGUARD6 -o tun+ -p udp --dport 53 -j RETURN 2>/dev/null
+            ip6tables -w 2 -A ADGUARD6 -o tun+ -p tcp --dport 53 -j RETURN 2>/dev/null
+            ip6tables -w 2 -A ADGUARD6 -o wg+ -p udp --dport 53 -j RETURN 2>/dev/null
+            ip6tables -w 2 -A ADGUARD6 -o wg+ -p tcp --dport 53 -j RETURN 2>/dev/null
+            ip6tables -w 2 -A ADGUARD6 -o ppp+ -p udp --dport 53 -j RETURN 2>/dev/null
+            ip6tables -w 2 -A ADGUARD6 -o ppp+ -p tcp --dport 53 -j RETURN 2>/dev/null
+        fi
         if ! ip6tables -w 2 -A ADGUARD6 -p udp --dport 53 -j REJECT --reject-with icmp6-port-unreachable 2>/dev/null; then
             ip6tables -w 2 -A ADGUARD6 -p udp --dport 53 -j DROP 2>/dev/null
         fi
@@ -436,7 +479,7 @@ apply_rules() {
     ip6tables -w 2 -t filter -A AGH_INPUT -p tcp --dport "$redir_port" -j DROP 2>/dev/null
     ip6tables -w 2 -t filter -C INPUT -j AGH_INPUT 2>/dev/null || ip6tables -w 2 -t filter -I INPUT 1 -j AGH_INPUT 2>/dev/null
 
-    rebuild_dot_guard
+    rebuild_dot_guard "$takeover_vpn"
     rebuild_sni
 }
 
@@ -510,7 +553,7 @@ preflight_check() {
     return 1
 }
 
-# 11. 【吸收项 1】VPN 自动识别与乐观缓存 / 缓存冲洗状态机 (带 6 秒防抖冷却，专治弱网闪断)
+# 11. 【吸收项 1】VPN 自动识别与零断流缓存冲洗状态机 (带 6 秒防抖冷却，专治弱网闪断，不重写配置文件不重启核心监听)
 vpn_status_last="init"
 vpn_pending_status=""
 vpn_pending_count=0
@@ -538,7 +581,7 @@ check_vpn_and_cache() {
         return 0
     fi
 
-    # 状态发生变化：启动防抖冷却确认机制（避免极端弱网下频繁闪断导致的重复清空缓存与刷写闪存）
+    # 状态发生变化：启动防抖冷却确认机制（避免极端弱网下频繁闪断导致的重复清空缓存）
     if [ "$vpn_now" = "$vpn_pending_status" ]; then
         vpn_pending_count=$((vpn_pending_count + 1))
     else
@@ -548,44 +591,41 @@ check_vpn_and_cache() {
 
     # 连续稳定确认至少 2 次（持续 6 秒以上），才真正判定为有效切换
     if [ "$vpn_pending_count" -ge 2 ]; then
-        # 重新执行一次本地智能识别并更新 iptables ADGUARD 规则链（0 网络包、单次执行）
+        # 重新执行一次本地智能识别并更新 iptables ADGUARD / ADGUARD6_NAT / ADGUARD_DOT 规则链（0 网络包、单次执行）
         apply_rules
         vpn_mode_cur=$(cat "$AGH_DIR/vpn_mode_status" 2>/dev/null)
-        opt_mode="${OPTIMISTIC_CACHE_MODE:-auto}"
         http_port=$(sed -n 's/^[[:space:]]*address:[[:space:]]*127\.0\.0\.1:\([0-9]*\).*/\1/p' "$BIN_DIR/AdGuardHome.yaml" 2>/dev/null | head -n 1)
         if [ -n "$http_port" ]; then
-            if [ "$vpn_now" = "on" ]; then
-                if [ "$opt_mode" != "force_off" ] && [ "$opt_mode" != "force_on" ]; then
-                    cfg=$(agh_api_get "http://127.0.0.1:$http_port/control/dns_info")
-                    if [ -n "$cfg" ]; then
-                        new_cfg=$(echo "$cfg" | sed 's/"cache_optimistic":[a-z]*/"cache_optimistic":false/')
-                        agh_api_post "http://127.0.0.1:$http_port/control/dns_config" "$new_cfg"
-                    fi
-                fi
-                agh_api_post "http://127.0.0.1:$http_port/control/cache_clear" ""
-                ndc resolver flushenv 2>/dev/null
-                if [ "$vpn_mode_cur" = "takeover" ]; then
-                    echo "$(date '+%F %T') [VPN] 检测到 VPN 已连接，智能识别为「回国加速去广告模式」（强制接管 DNS 并清空旧缓存）" >> "$MAIN_LOG"
-                else
-                    echo "$(date '+%F %T') [VPN] 检测到 VPN 已连接，智能识别为「翻墙出国防污染模式」（放行 VPN 隧道 DNS，由 SNI 拦截广告）" >> "$MAIN_LOG"
-                fi
+            agh_api_post "http://127.0.0.1:$http_port/control/cache_clear" ""
+        fi
+        ndc resolver flushenv 2>/dev/null
+        if [ "$vpn_now" = "on" ]; then
+            if [ "$vpn_mode_cur" = "takeover" ]; then
+                echo "$(date '+%F %T') [VPN] 检测到 VPN 已连接，智能识别为「回国加速去广告模式」（强制接管 DNS 并清空旧缓存）" >> "$MAIN_LOG"
             else
-                if [ "$opt_mode" != "force_off" ] && [ "$opt_mode" != "force_on" ]; then
-                    cfg=$(agh_api_get "http://127.0.0.1:$http_port/control/dns_info")
-                    if [ -n "$cfg" ]; then
-                        new_cfg=$(echo "$cfg" | sed 's/"cache_optimistic":[a-z]*/"cache_optimistic":true/')
-                        agh_api_post "http://127.0.0.1:$http_port/control/dns_config" "$new_cfg"
-                    fi
-                fi
-                agh_api_post "http://127.0.0.1:$http_port/control/cache_clear" ""
-                ndc resolver flushenv 2>/dev/null
-                echo "$(date '+%F %T') [VPN] 检测到 VPN 已断开，已恢复默认直连模式并刷新本地 DNS" >> "$MAIN_LOG"
+                echo "$(date '+%F %T') [VPN] 检测到 VPN 已连接，智能识别为「翻墙出国防污染模式」（放行 VPN 隧道 DNS，由 SNI 拦截广告）" >> "$MAIN_LOG"
             fi
+        else
+            echo "$(date '+%F %T') [VPN] 检测到 VPN 已断开，已恢复默认直连模式并刷新本地 DNS" >> "$MAIN_LOG"
         fi
         vpn_status_last="$vpn_now"
         vpn_pending_status=""
         vpn_pending_count=0
     fi
+}
+
+# 零开销优先读取内核 sysfs 背光亮度判定亮息屏，不可读时再回退 dumpsys
+is_device_screen_on() {
+    for bl in /sys/class/leds/lcd-backlight/brightness /sys/class/backlight/*/brightness; do
+        if [ -r "$bl" ]; then
+            val=$(cat "$bl" 2>/dev/null)
+            case "$val" in
+                ""|0) return 1 ;;
+                *) return 0 ;;
+            esac
+        fi
+    done
+    dumpsys power 2>/dev/null | grep -qE 'mHoldingDisplaySuspendBlocker=true|mHoldingDisplay=true|mWakefulness=Awake|Display Power: state=ON'
 }
 
 # 12. 前台放行名单应用动态感应（优先使用零开销 /dev/cpuset/top-app 读取，亮屏且名单应用在前台时自动暂停过滤，离开或息屏后恢复）
@@ -612,11 +652,11 @@ check_app_allowlist() {
         done
     fi
 
-    # 若 cpuset 不可读，仅在亮屏时回退 dumpsys
+    # 仅在必要时检测亮屏状态（优先读 sysfs 背光亮度，0 Binder 开销）
     is_screen_on="1"
     if [ -z "$current" ] || [ -f "$AGH_DIR/app_pause_active" ] || grep -qxF "$current" "$AGH_DIR/app-allow.txt" 2>/dev/null; then
         is_screen_on="0"
-        if dumpsys power 2>/dev/null | grep -qE 'mHoldingDisplaySuspendBlocker=true|mHoldingDisplay=true|mWakefulness=Awake|Display Power: state=ON'; then
+        if is_device_screen_on; then
             is_screen_on="1"
         fi
     fi
@@ -722,7 +762,8 @@ if preflight_check; then
     refresh_network
 fi
 
-# --- 轻量化守护循环：秒级感应 VPN 与应用白名单，60 秒维持规则与图表采样 ---
+# --- 轻量化守护循环：秒级感应软重启 netd 重建、VPN 切换与应用白名单，60 秒维持规则与图表采样 ---
+last_netd_pid=$(pidof netd 2>/dev/null | awk '{print $1}')
 loop_cnt=0
 while true; do
     sleep 3
@@ -732,6 +773,20 @@ while true; do
         clean_all_rules
         killall -9 AdGuardHome 2>/dev/null || kill -9 $(pidof AdGuardHome 2>/dev/null) 2>/dev/null
         exit 0
+    fi
+
+    # 【临时 Root 软重启秒级自愈】：零开销检测系统 netd 是否在软重启中重建（netd 重启会冲掉全部 iptables）
+    if [ -z "$last_netd_pid" ] || [ ! -d "/proc/$last_netd_pid" ]; then
+        if [ "$(getprop sys.boot_completed 2>/dev/null)" = "1" ]; then
+            cur_netd_pid=$(pidof netd 2>/dev/null | awk '{print $1}')
+            if [ -n "$cur_netd_pid" ]; then
+                last_netd_pid="$cur_netd_pid"
+                agh_running || start_agh
+                apply_rules
+                refresh_network
+                echo "$(date '+%F %T') [SOFT-REBOOT] 检测到系统 netd 重建 (PID: $cur_netd_pid)，已秒级重挂 DNS 与 SNI 防火墙规则" >> "$MAIN_LOG"
+            fi
+        fi
     fi
 
     # 极速秒级检查 VPN 状态切换（0% CPU）
