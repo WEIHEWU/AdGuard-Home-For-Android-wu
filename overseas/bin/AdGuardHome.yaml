@@ -34,17 +34,11 @@ dns:
     - '[/au/]https://1.1.1.1/dns-query'
     - '[/au/]https://8.8.8.8/dns-query'
     - '[/au/]https://9.9.9.9/dns-query'
-    # --- 中国大陆常用网站与「一键回国」音视频/音乐/直播服务：走阿里DNS / 腾讯DNSPod，精准分配国内最优CDN与解锁节点 ---
-    - '[/cn/edu.cn/gov.cn/]https://223.5.5.5/dns-query'
-    - '[/qq.com/weixin.com/tencent.com/qpic.cn/qlogo.cn/gtimg.cn/gtimg.com/myqcloud.com/servicewechat.com/weiyun.com/]https://1.12.12.12/dns-query'
-    - '[/taobao.com/tmall.com/alicdn.com/aliyun.com/alipay.com/tbcache.com/alipayobjects.com/]https://223.5.5.5/dns-query'
-    - '[/bilibili.com/bilivideo.com/biliapi.net/biliapi.com/hdslb.com/acfun.cn/aixifan.com/douyu.com/douyucdn.cn/huya.com/msstatic.com/]https://223.5.5.5/dns-query'
-    - '[/iqiyi.com/iqiyipic.com/71.am/youku.com/ykimg.com/mgtv.com/hunantv.com/hitv.com/miguvideo.com/migu.cn/yangshipin.cn/cctv.com/cctvpic.com/cntv.cn/sohu.com/itc.cn/le.com/letv.com/]https://223.5.5.5/dns-query'
-    - '[/163.com/126.net/127.net/netease.com/kugou.com/kuwo.cn/koowo.com/qishui.com/ximalaya.com/xmcdn.com/]https://223.5.5.5/dns-query'
-    - '[/douyin.com/snssdk.com/toutiao.com/zijieapi.com/byteimg.com/pstatp.com/bytedance.com/kuaishou.com/yximgs.com/kwai.net/xhscdn.com/xiaohongshu.com/weibo.com/weibocdn.com/sinaimg.cn/sina.com.cn/zhihu.com/zhimg.com/]https://223.5.5.5/dns-query'
-    - '[/baidu.com/bdstatic.com/baidupcs.com/bdimg.com/]https://223.5.5.5/dns-query'
-    - '[/jd.com/360buy.com/360buyimg.com/xiaomi.com/mi.com/meituan.com/dpfile.com/dianping.com/ctrip.com/12306.cn/]https://223.5.5.5/dns-query'
-    # --- 澳洲本地及全球其它网站（Gmail/Google全家桶/澳洲网银/本地媒体等）：走澳洲本地超低延迟 Anycast DNS ---
+    # --- 纯大陆境内政务/高校/铁路（无海外CDN）：走阿里/腾讯 DoH，防止海外递归节点解析超时 ---
+    - '[/gov.cn/edu.cn/12306.cn/]https://223.5.5.5/dns-query'
+    - '[/gov.cn/edu.cn/12306.cn/]https://1.12.12.12/dns-query'
+    # --- 海外本地应用 + 国内常用 App（微信/小红书/B站/淘宝/抖音/京东等）：走本地超低延迟 Anycast DoH ---
+    # 配合 EDNS Client Subnet 直接命中腾讯/阿里/字节/小红书部署在海外(悉尼/新加坡等)的边缘 CDN，秒开不绕路
     - https://1.1.1.1/dns-query
     - https://1.0.0.1/dns-query
     - https://8.8.8.8/dns-query
@@ -82,7 +76,7 @@ dns:
   cache_ttl_max: 3600
   cache_optimistic: true
   cache_optimistic_answer_ttl: 30s
-  cache_optimistic_max_age: 2h
+  cache_optimistic_max_age: 12h
   bogus_nxdomain: []
   aaaa_disabled: false
   enable_dnssec: false
@@ -260,6 +254,56 @@ user_rules:
   - '@@||nine.com.au^$important'
   - '@@||7plus.com.au^$important'
   - '@@||10play.com.au^$important'
+  # --- 海外日常支付、公共交通、全球通讯、流媒体历史记录与 AI 工具白名单 ---
+  - '@@||paypal.com^$important'
+  - '@@||paypalobjects.com^$important'
+  - '@@||stripe.com^$important'
+  - '@@||stripe.network^$important'
+  - '@@||braintreegateway.com^$important'
+  - '@@||adyen.com^$important'
+  - '@@||afterpay.com^$important'
+  - '@@||klarna.com^$important'
+  - '@@||wise.com^$important'
+  - '@@||revolut.com^$important'
+  - '@@||transportnsw.info^$important'
+  - '@@||ptv.vic.gov.au^$important'
+  - '@@||translink.com.au^$important'
+  - '@@||didiglobal.com^$important'
+  - '@@||whatsapp.com^$important'
+  - '@@||whatsapp.net^$important'
+  - '@@||telegram.org^$important'
+  - '@@||t.me^$important'
+  - '@@||discord.com^$important'
+  - '@@||discordapp.com^$important'
+  - '@@||signal.org^$important'
+  - '@@||s.youtube.com^$important'
+  - '@@||video-stats.l.google.com^$important'
+  - '@@||spotify.com^$important'
+  - '@@||scdn.co^$important'
+  - '@@||netflix.com^$important'
+  - '@@||nflxvideo.net^$important'
+  - '@@||disneyplus.com^$important'
+  - '@@||openai.com^$important'
+  - '@@||chatgpt.com^$important'
+  - '@@||anthropic.com^$important'
+  - '@@||claude.ai^$important'
+  # --- 海外使用国内高频 App（微信/支付宝/小红书/B站/淘宝）跨境直连与支付核心白名单 ---
+  - '@@||wechat.com^$important'
+  - '@@||wx.qq.com^$important'
+  - '@@||qpic.cn^$important'
+  - '@@||qlogo.cn^$important'
+  - '@@||servicewechat.com^$important'
+  - '@@||tenpay.com^$important'
+  - '@@||alipay.com^$important'
+  - '@@||alipayobjects.com^$important'
+  - '@@||intl.alipay.com^$important'
+  - '@@||xiaohongshu.com^$important'
+  - '@@||xhscdn.com^$important'
+  - '@@||passport.bilibili.com^$important'
+  - '@@||api.bilibili.com^$important'
+  - '@@||bilivideo.com^$important'
+  - '@@||hdslb.com^$important'
+  - '@@||cainiao.com^$important'
   # --- 国内常用服务放行规则 ---
   - '#针对转转App的放行规则，勿删'
   - '@@||zhuanzhuan.com^$important'
@@ -306,7 +350,6 @@ user_rules:
   - '||nourl.ubs.baidu.com^$important'
   - '||fakeurl.virtual.baidu.com^$important'
   - '||wejianzhan.com^$important'
-  - '||oschina.net^$important'
   - '@@||sfp.safe.baidu.com^$important'
   - '@@||dlswbr.baidu.com^$important'
   - '#针对腾讯QQ浏览器的拦截规则，勿删'

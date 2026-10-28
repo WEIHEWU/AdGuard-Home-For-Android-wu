@@ -234,15 +234,112 @@ safe_clean "/data/media/0/com.luna.music/files/splashCache"
 safe_clean "/data/media/0/Android/data/com.fenbi.android.solar/cache/glide"
 safe_clean "/data/media/0/Android/data/com.fenbi.android.solar/files/presentImage"
 
+# 小红书
+safe_clean "/data/data/com.xingin.xhs/cache/splash"
+safe_clean "/data/data/com.xingin.xhs/files/splash"
+safe_clean "/data/media/0/Android/data/com.xingin.xhs/cache/splash"
+
+# 微博 & 微博国际版/轻享版
+safe_clean "/data/data/com.sina.weibo/cache/wb_ad_cache"
+safe_clean "/data/data/com.sina.weibo/files/wb_ad"
+safe_clean "/data/media/0/Android/data/com.sina.weibo/files/sina/weibo/.weibo_ad_universal_cache"
+safe_clean "/data/media/0/Android/data/com.sina.weibo/cache/ad"
+safe_clean "/data/data/com.weico.international/cache/splash"
+safe_clean "/data/media/0/Android/data/com.weico.international/cache/ad"
+
+# 哔哩哔哩国际版 (Play版) & 概念版
+safe_clean "/data/data/com.bilibili.app.in/files/splash2"
+safe_clean "/data/data/com.bilibili.app.in/files/splash_top_view"
+safe_clean "/data/data/com.bilibili.app.in/files/res_cache"
+safe_clean "/data/data/com.bilibili.app.blue/files/splash2"
+safe_clean "/data/data/com.bilibili.app.blue/files/splash_top_view"
+
+# 淘宝
+safe_clean "/data/data/com.taobao.taobao/files/bootimage"
+safe_clean "/data/media/0/Android/data/com.taobao.taobao/files/bootimage"
+
+# 爱奇艺 & iQIYI 国际版
+safe_clean "/data/media/0/Android/data/com.qiyi.video/files/app/ads"
+safe_clean "/data/data/com.qiyi.video/files/app/ads"
+safe_clean "/data/media/0/Android/data/com.iqiyi.i18n/files/app/ads"
+safe_clean "/data/data/com.iqiyi.i18n/files/app/ads"
+
+# 腾讯视频 & WeTV 国际版
+safe_clean "/data/media/0/Android/data/com.tencent.qqlive/files/tad_cache"
+safe_clean "/data/data/com.tencent.qqlive/files/tad_cache"
+safe_clean "/data/media/0/Android/data/com.tencent.qqlivei18n/files/tad_cache"
+safe_clean "/data/data/com.tencent.qqlivei18n/files/tad_cache"
+
+# 优酷 & Youku 国际版
+safe_clean "/data/media/0/Android/data/com.youku.phone/files/ad"
+safe_clean "/data/data/com.youku.phone/files/ad"
+safe_clean "/data/media/0/Android/data/com.youku.international/files/ad"
+
+# 百度贴吧
+safe_clean "/data/data/com.baidu.tieba/files/splash"
+safe_clean "/data/media/0/Android/data/com.baidu.tieba/files/splash"
+
+# 豆瓣
+safe_clean "/data/data/com.douban.frodo/cache/splash"
+safe_clean "/data/media/0/Android/data/com.douban.frodo/cache/splash"
+
+# 喜马拉雅
+safe_clean "/data/media/0/Android/data/com.ximalaya.ting.android/files/ad"
+safe_clean "/data/data/com.ximalaya.ting.android/files/ad"
+
+# 虎牙直播 & 斗鱼直播
+safe_clean "/data/media/0/Android/data/com.duowan.kiwi/cache/splash"
+safe_clean "/data/media/0/Android/data/air.tv.douyu.android/files/splash"
+
+# Trip.com (携程海外版)
+safe_clean "/data/media/0/Android/data/ctrip.english/cache/CTADCache"
+safe_clean "/data/data/ctrip.english/files/CTAD"
+
+# 7b. 精准清理国内外通用第三方广告 SDK 离线视频/插屏/开屏缓存目录（UnityAds / Vungle / IronSource / AppLovin / Pangle穿山甲 / 优量汇广点通 / Mintegral / 快手百青藤）
+for sdk_dir in \
+    /data/data/*/cache/UnityAdsCache \
+    /data/data/*/files/UnityAdsCache \
+    /data/data/*/cache/UnityAdsVideoCache \
+    /data/data/*/cache/vungle_cache \
+    /data/data/*/files/vungle_cache \
+    /data/data/*/cache/supersonicads \
+    /data/data/*/files/supersonicads \
+    /data/data/*/cache/al_video_cache \
+    /data/data/*/cache/.chartboost \
+    /data/data/*/cache/pangle_com.byted.pangle \
+    /data/data/*/files/pangle_p \
+    /data/data/*/cache/tt_ad \
+    /data/data/*/cache/gdt_plugin \
+    /data/data/*/app_gdt_plugin \
+    /data/data/*/cache/mbridge \
+    /data/data/*/files/mbridge \
+    /data/data/*/cache/ksad_download \
+    /data/data/*/cache/bdads \
+    /data/media/0/Android/data/*/cache/UnityAdsCache \
+    /data/media/0/Android/data/*/files/UnityAdsCache \
+    /data/media/0/Android/data/*/cache/UnityAdsVideoCache \
+    /data/media/0/Android/data/*/cache/vungle_cache \
+    /data/media/0/Android/data/*/files/supersonicads \
+    /data/media/0/Android/data/*/cache/pangle_com.byted.pangle \
+    /data/media/0/Android/data/*/cache/gdt_plugin \
+    /data/media/0/Android/data/*/cache/mbridge \
+    /data/media/0/Android/data/*/cache/tad_cache; do
+    [ -e "$sdk_dir" ] && safe_clean "$sdk_dir"
+done
+
 # 8. 永久静默大厂典型应用的设备日志读取权限（双重保险，根绝系统弹窗）
 for pkg in \
     com.tencent.qqmusic \
     com.tencent.mobileqq \
     tv.danmaku.bili \
+    com.bilibili.app.in \
     com.zhihu.android \
+    com.xingin.xhs \
+    com.sina.weibo \
     com.netease.cloudmusic \
     com.sankuai.meituan.takeoutnew \
     com.autonavi.minimap \
+    com.taobao.taobao \
     com.taobao.idlefish \
     com.ss.android.ugc.aweme \
     com.ss.android.article.news \

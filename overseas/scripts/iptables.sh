@@ -295,8 +295,8 @@ rebuild_dot_guard() {
 }
 
 # 5c. 智能零耗电本地判定 VPN DNS 接管模式（仅在启动及 VPN 状态切换瞬间执行 1 次，0 网络请求、0 轮询、0 死循环）
-# 返回 0 (true): 强制接管 VPN DNS（回国加速模式，100% 拦截国内音视频广告）
-# 返回 1 (false): 放行 VPN 自身 DNS（翻墙出国防污染模式，靠 AGH_SNI 拦截广告）
+# 返回 0 (true): 强制接管 VPN DNS（海外网络环境 / 回国加速模式，100% 拦截国内外应用与音视频广告）
+# 返回 1 (false): 放行 VPN 自身 DNS（仅在漫游回中国大陆且开启翻墙防污染 VPN 时触发，靠 AGH_SNI 拦截广告）
 should_takeover_vpn_dns() {
     if [ "$VPN_DNS_TAKEOVER" = "1" ]; then
         echo "takeover" > "$AGH_DIR/vpn_mode_status" 2>/dev/null
@@ -319,7 +319,32 @@ should_takeover_vpn_dns() {
         return 0
     fi
 
-    # 第一层（最快最准）：检查虚拟网卡 IP 与路由是否包含 Fake-IP / Sing-box / Clash 专用网段 (IPv4: 198.18.0.0/15, 172.19.0.0/16; IPv6: fc00::/18, fdfe:dcba:9876::/48)
+    # 第一层：识别知名回国加速 VPN 进程（Malus / QuickFox / 穿梭 / 快帆等），无论身处何地一律强制接管 DNS
+    vpn_procs=$(ps -A -o ARGS 2>/dev/null || ps 2>/dev/null)
+    if echo "$vpn_procs" | grep -qiE 'in\.malus|getmalus|transocks|shuttle|speedcn|quickfox|sixfast|golink|kanet|flycn|backcn|c2cvpn|haigui|guiyan|unblockcn'; then
+        echo "takeover" > "$AGH_DIR/vpn_mode_status" 2>/dev/null
+        return 0
+    fi
+
+    # 第二层：读取手机当前连接的物理蜂窝基站国家码（纯内存读取 getprop，毫秒级）
+    # 身处海外（非 cn / 非 460 基站）时本地无 GFW DNS 污染，无论开启 Clash/Sing-box 分流回国还是 Proton/Nord/WARP，
+    # 均保持 takeover 强制接管 VPN 53 端口，确保海外开启任何 VPN 时 AdGuardHome 广告过滤 100% 满血生效！
+    op_country=$(getprop gsm.operator.iso-country 2>/dev/null | tr 'A-Z' 'a-z')
+    op_mcc=$(getprop gsm.operator.numeric 2>/dev/null)
+    in_mainland_cn=0
+    case "$op_country" in
+        *cn*) in_mainland_cn=1 ;;
+    esac
+    case "$op_mcc" in
+        460*|*,460*) in_mainland_cn=1 ;;
+    esac
+
+    if [ "$in_mainland_cn" = "0" ]; then
+        echo "takeover" > "$AGH_DIR/vpn_mode_status" 2>/dev/null
+        return 0
+    fi
+
+    # 第三层：仅当用户漫游回中国大陆境内（cn / 460 基站）时，若开启了翻墙防污染 VPN 或 Fake-IP 隧道则切换为 bypass 防污染
     if ip -4 addr show 2>/dev/null | grep -qE '198\.18\.|172\.19\.' || \
        ip -4 route show table all 2>/dev/null | grep -qE '198\.18\.|172\.19\.' || \
        ip -6 addr show 2>/dev/null | grep -qiE 'fdfe:dcba:9876|fc00::' || \
@@ -327,41 +352,13 @@ should_takeover_vpn_dns() {
         echo "bypass" > "$AGH_DIR/vpn_mode_status" 2>/dev/null
         return 1
     fi
-
-    # 第二层：检查当前运行的 VPN 进程包名特征（纯本地读取 /proc，毫秒级）
-    vpn_procs=$(ps -A -o ARGS 2>/dev/null || ps 2>/dev/null)
-    if echo "$vpn_procs" | grep -qiE 'in\.malus|getmalus|transocks|shuttle|speedcn|quickfox|sixfast|golink|kanet|flycn|backcn|c2cvpn|haigui|guiyan|unblockcn'; then
-        echo "takeover" > "$AGH_DIR/vpn_mode_status" 2>/dev/null
-        return 0
-    fi
     if echo "$vpn_procs" | grep -qiE 'clash|mihomo|sing-box|singbox|v2ray|nekobox|nb4a|husi|karing|matsuri|sagernet|surfboard|shadowsocks|hiddify|xray|outline|psiphon|lantern|protonvpn|expressvpn|nordvpn|surfshark|mullvad|onedotonedotonedotone'; then
         echo "bypass" > "$AGH_DIR/vpn_mode_status" 2>/dev/null
         return 1
     fi
 
-    # 第三层：读取手机当前连接的物理蜂窝基站国家码（纯内存读取 getprop，非 SIM 卡归属地，漫游回国同样精准识别）
-    op_country=$(getprop gsm.operator.iso-country 2>/dev/null | tr 'A-Z' 'a-z')
-    op_mcc=$(getprop gsm.operator.numeric 2>/dev/null)
-    case "$op_country" in
-        *cn*)
-            echo "bypass" > "$AGH_DIR/vpn_mode_status" 2>/dev/null
-            return 1
-            ;;
-    esac
-    case "$op_mcc" in
-        460*|*,460*)
-            echo "bypass" > "$AGH_DIR/vpn_mode_status" 2>/dev/null
-            return 1
-            ;;
-    esac
-    if [ -n "$(echo "$op_country" | tr -d ',[:space:]')" ]; then
-        echo "takeover" > "$AGH_DIR/vpn_mode_status" 2>/dev/null
-        return 0
-    fi
-
-    # 第四层：终极兜底（飞行模式无基站信号且为未知 VPN 时，海外版默认接管）
-    echo "takeover" > "$AGH_DIR/vpn_mode_status" 2>/dev/null
-    return 0
+    echo "bypass" > "$AGH_DIR/vpn_mode_status" 2>/dev/null
+    return 1
 }
 
 # 6. 应用高效 DNS 重定向规则
@@ -395,12 +392,9 @@ apply_rules() {
         done
     fi
     # 根据纯本地智能识别结果动态配置 VPN DNS 策略：
-    if [ "$takeover_vpn" -eq 0 ]; then
-        # 回国加速接管模式（或未开 VPN）：仅保留 Fake-IP 静态网段兜底，tun+ 上的 53 端口 DNS 全部强制接管进 AdGuardHome
-        iptables -w 2 -t nat -A ADGUARD -d 198.18.0.0/15 -j RETURN 2>/dev/null
-        iptables -w 2 -t nat -A ADGUARD -d 172.19.0.0/16 -j RETURN 2>/dev/null
-    else
-        # 翻墙出国防污染模式：放行 Fake-IP 与 VPN 虚拟网卡 (tun+ / wg+ / ppp+) 的 53 端口，防国内 DNS 污染，由 AGH_SNI 在 443 握手层拦截广告
+    # takeover_vpn=0 时（海外环境 / 回国加速 / 未开 VPN）：所有 53 端口请求（含发往 TUN 虚拟 DNS 172.19.0.2/198.18.0.2 的查询）全部重定向至 AdGuardHome
+    # takeover_vpn!=0 时（漫游回大陆且开启翻墙防污染 VPN）：放行 Fake-IP 与 VPN 虚拟网卡 (tun+ / wg+ / ppp+) 的 53 端口，由 AGH_SNI 在 443 握手层拦截广告
+    if [ "$takeover_vpn" -ne 0 ]; then
         iptables -w 2 -t nat -A ADGUARD -d 198.18.0.0/15 -j RETURN 2>/dev/null
         iptables -w 2 -t nat -A ADGUARD -d 172.19.0.0/16 -j RETURN 2>/dev/null
         iptables -w 2 -t nat -A ADGUARD -o tun+ -p udp --dport 53 -j RETURN 2>/dev/null
@@ -413,16 +407,16 @@ apply_rules() {
     iptables -w 2 -t nat -A ADGUARD -p udp --dport 53 -j REDIRECT --to-ports "$redir_port"
     iptables -w 2 -t nat -A ADGUARD -p tcp --dport 53 -j REDIRECT --to-ports "$redir_port"
 
-    # 建立 IPv6 DNS 接管链：优先使用 ip6tables nat REDIRECT（防 Telstra 等纯 IPv6/464XLAT 移动网络断网），并同步豁免 IPv6 Fake-IP 与翻墙 VPN 隧道，不支持时自动回退 REJECT
+    # 建立 IPv6 DNS 接管链：优先使用 ip6tables nat REDIRECT（防 Telstra 等纯 IPv6/464XLAT 移动网络断网），并同步豁免翻墙 VPN 隧道，不支持时自动回退 REJECT
     ip6tables -w 2 -t nat -N ADGUARD6_NAT 2>/dev/null
     ip6tables -w 2 -t nat -F ADGUARD6_NAT 2>/dev/null
     ip6tables -w 2 -t nat -A ADGUARD6_NAT -m owner --uid-owner 0 --gid-owner "$AGH_GID" -j RETURN 2>/dev/null
     for auid in $allow_uids; do
         ip6tables -w 2 -t nat -A ADGUARD6_NAT -m owner --uid-owner "$auid" -j RETURN 2>/dev/null
     done
-    ip6tables -w 2 -t nat -A ADGUARD6_NAT -d fc00::/18 -j RETURN 2>/dev/null
-    ip6tables -w 2 -t nat -A ADGUARD6_NAT -d fdfe:dcba:9876::/48 -j RETURN 2>/dev/null
     if [ "$takeover_vpn" -ne 0 ]; then
+        ip6tables -w 2 -t nat -A ADGUARD6_NAT -d fc00::/18 -j RETURN 2>/dev/null
+        ip6tables -w 2 -t nat -A ADGUARD6_NAT -d fdfe:dcba:9876::/48 -j RETURN 2>/dev/null
         ip6tables -w 2 -t nat -A ADGUARD6_NAT -o tun+ -p udp --dport 53 -j RETURN 2>/dev/null
         ip6tables -w 2 -t nat -A ADGUARD6_NAT -o tun+ -p tcp --dport 53 -j RETURN 2>/dev/null
         ip6tables -w 2 -t nat -A ADGUARD6_NAT -o wg+ -p udp --dport 53 -j RETURN 2>/dev/null
@@ -447,9 +441,9 @@ apply_rules() {
         for auid in $allow_uids; do
             ip6tables -w 2 -A ADGUARD6 -m owner --uid-owner "$auid" -j RETURN 2>/dev/null
         done
-        ip6tables -w 2 -A ADGUARD6 -d fc00::/18 -j RETURN 2>/dev/null
-        ip6tables -w 2 -A ADGUARD6 -d fdfe:dcba:9876::/48 -j RETURN 2>/dev/null
         if [ "$takeover_vpn" -ne 0 ]; then
+            ip6tables -w 2 -A ADGUARD6 -d fc00::/18 -j RETURN 2>/dev/null
+            ip6tables -w 2 -A ADGUARD6 -d fdfe:dcba:9876::/48 -j RETURN 2>/dev/null
             ip6tables -w 2 -A ADGUARD6 -o tun+ -p udp --dport 53 -j RETURN 2>/dev/null
             ip6tables -w 2 -A ADGUARD6 -o tun+ -p tcp --dport 53 -j RETURN 2>/dev/null
             ip6tables -w 2 -A ADGUARD6 -o wg+ -p udp --dport 53 -j RETURN 2>/dev/null

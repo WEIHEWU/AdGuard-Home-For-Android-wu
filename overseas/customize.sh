@@ -120,7 +120,7 @@ if [ -f "$BACKUP_DIR/AdGuardHome.yaml" ] && [ -f "$BIN_DIR/AdGuardHome.yaml" ]; 
             rule = $0
             sub(/^[[:space:]]*-[[:space:]]*/, "", rule)
             gsub(/^'\''|'\''$|^"|"$|[[:space:]]+$/, "", rule)
-            if (rule != "" && rule !~ /1e100\.net/) print rule
+            if (rule != "" && rule !~ /1e100\.net|oschina\.net/) print rule
         }
     ' "$BACKUP_DIR/AdGuardHome.yaml" 2>/dev/null | while IFS= read -r urule; do
         [ -z "$urule" ] && continue
