@@ -1,6 +1,6 @@
 id=AdGuardHome
 name=AdGuard Home For Android (海外版)
-version=20261028-Beta1
-versionCode=2026102801
+version=20261030-Beta1
+versionCode=2026103001
 author=春梦无痕
 description=AdGuard Home for Android（海外版）本地运行模块，支持临时Root软重启秒级自愈、海内外双栈VPN防污染/回国加速自适应、低功耗前台放行与全设备级 DNS/SNI 去广告保护。

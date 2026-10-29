@@ -123,37 +123,50 @@ if ! agh_running; then
         done
 
         # 启动AdGuardHome（绑定专属 GID 23333，与系统 netd [uid=0,gid=0] 彻底物理隔离；注入 GOMEMLIMIT 限制 Go 核心常驻内存）
-        export GOMEMLIMIT=65MiB
+        AGH_TZ="$(getprop persist.sys.timezone 2>/dev/null)"
+        [ -n "$AGH_TZ" ] && export TZ="$AGH_TZ"
+        export GOMEMLIMIT=96MiB
         export GOGC=50
         export SSL_CERT_DIR="/system/etc/security/cacerts/"
         [ -s "$CA_BUNDLE" ] && export SSL_CERT_FILE="$CA_BUNDLE"
         if command -v busybox >/dev/null 2>&1 && busybox chpst -u 0:$AGH_GID true 2>/dev/null; then
-            busybox chpst -u 0:$AGH_GID "$BIN_DIR/AdGuardHome" --no-check-update >/dev/null 2>&1 &
+            busybox chpst -u 0:$AGH_GID "$BIN_DIR/AdGuardHome" --no-check-update --crash-log "$AGH_DIR/crash.log" --logfile discard >/dev/null 2>&1 &
             echo "$!" > "$BIN_DIR/AdGuardHome.pid"
         elif command -v busybox >/dev/null 2>&1 && busybox setpriv --reuid=0 --regid=$AGH_GID --clear-groups true 2>/dev/null; then
-            busybox setpriv --reuid=0 --regid=$AGH_GID --clear-groups "$BIN_DIR/AdGuardHome" --no-check-update >/dev/null 2>&1 &
+            busybox setpriv --reuid=0 --regid=$AGH_GID --clear-groups "$BIN_DIR/AdGuardHome" --no-check-update --crash-log "$AGH_DIR/crash.log" --logfile discard >/dev/null 2>&1 &
             echo "$!" > "$BIN_DIR/AdGuardHome.pid"
         elif command -v setpriv >/dev/null 2>&1 && setpriv --reuid=0 --regid=$AGH_GID --clear-groups true 2>/dev/null; then
-            setpriv --reuid=0 --regid=$AGH_GID --clear-groups "$BIN_DIR/AdGuardHome" --no-check-update >/dev/null 2>&1 &
+            setpriv --reuid=0 --regid=$AGH_GID --clear-groups "$BIN_DIR/AdGuardHome" --no-check-update --crash-log "$AGH_DIR/crash.log" --logfile discard >/dev/null 2>&1 &
             echo "$!" > "$BIN_DIR/AdGuardHome.pid"
         elif command -v chpst >/dev/null 2>&1 && chpst -u 0:$AGH_GID true 2>/dev/null; then
-            chpst -u 0:$AGH_GID "$BIN_DIR/AdGuardHome" --no-check-update >/dev/null 2>&1 &
+            chpst -u 0:$AGH_GID "$BIN_DIR/AdGuardHome" --no-check-update --crash-log "$AGH_DIR/crash.log" --logfile discard >/dev/null 2>&1 &
             echo "$!" > "$BIN_DIR/AdGuardHome.pid"
         elif command -v su >/dev/null 2>&1 && su -g $AGH_GID -c true 2>/dev/null; then
-            su -g $AGH_GID -c "exec '$BIN_DIR/AdGuardHome' --no-check-update >/dev/null 2>&1" &
+            su -g $AGH_GID -c "TZ='${AGH_TZ:-}' GOMEMLIMIT=96MiB GOGC=50 SSL_CERT_DIR='/system/etc/security/cacerts/' SSL_CERT_FILE='$CA_BUNDLE' exec '$BIN_DIR/AdGuardHome' --no-check-update --crash-log '$AGH_DIR/crash.log' --logfile discard >/dev/null 2>&1" &
             echo "$!" > "$BIN_DIR/AdGuardHome.pid"
         else
-            "$BIN_DIR/AdGuardHome" --no-check-update >/dev/null 2>&1 &
+            "$BIN_DIR/AdGuardHome" --no-check-update --crash-log "$AGH_DIR/crash.log" --logfile discard >/dev/null 2>&1 &
             echo "$!" > "$BIN_DIR/AdGuardHome.pid"
         fi
 
-        sleep 2
-        if agh_running; then
+        port_hex=$(printf '%04X' "$R1")
+        dns_ready=0
+        for _w in 1 2 3; do
+            sleep 1
+            agh_running || break
+            if grep -qi ":$port_hex " /proc/net/udp /proc/net/udp6 2>/dev/null; then
+                dns_ready=1
+                break
+            fi
+        done
+        if agh_running && [ "$dns_ready" -eq 1 ]; then
             agh_real_pid=$(pidof AdGuardHome 2>/dev/null | awk '{print $1}')
             [ -n "$agh_real_pid" ] && echo "$agh_real_pid" > "$BIN_DIR/AdGuardHome.pid"
             [ "$lang" = "zh" ] && echo "$(date '+%F %T') AdGuardHome 启动成功 (PID=${agh_real_pid:-unknown}, GID=$AGH_GID, DNS=$R1, HTTP=$R2)。" >> "$MAIN_LOG" || echo "$(date '+%F %T') AdGuardHome started successfully (PID=${agh_real_pid:-unknown}, GID=$AGH_GID, DNS=$R1, HTTP=$R2)." >> "$MAIN_LOG"
             break
         fi
+        # 若进程存活但端口未绑定成功，先清理残留进程再进入下一次随机端口重试
+        killall -9 AdGuardHome 2>/dev/null || kill -9 $(pidof AdGuardHome 2>/dev/null) 2>/dev/null
     done
 
     if ! agh_running; then

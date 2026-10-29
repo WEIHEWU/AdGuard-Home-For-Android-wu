@@ -93,27 +93,29 @@ start_agh() {
     for rpf in /proc/sys/net/ipv4/conf/*/rp_filter; do
         [ -w "$rpf" ] && echo 2 > "$rpf" 2>/dev/null
     done
-    export GOMEMLIMIT=65MiB
+    AGH_TZ="$(getprop persist.sys.timezone 2>/dev/null)"
+    [ -n "$AGH_TZ" ] && export TZ="$AGH_TZ"
+    export GOMEMLIMIT=96MiB
     export GOGC=50
     export SSL_CERT_DIR="/system/etc/security/cacerts/"
     [ -s "$BIN_DIR/cacerts.pem" ] && export SSL_CERT_FILE="$BIN_DIR/cacerts.pem"
     if command -v busybox >/dev/null 2>&1 && busybox chpst -u 0:$AGH_GID true 2>/dev/null; then
-        busybox chpst -u 0:$AGH_GID "$BIN_DIR/AdGuardHome" --no-check-update >/dev/null 2>&1 &
+        busybox chpst -u 0:$AGH_GID "$BIN_DIR/AdGuardHome" --no-check-update --crash-log "$AGH_DIR/crash.log" --logfile discard >/dev/null 2>&1 &
         echo "$!" > "$PID_FILE"
     elif command -v busybox >/dev/null 2>&1 && busybox setpriv --reuid=0 --regid=$AGH_GID --clear-groups true 2>/dev/null; then
-        busybox setpriv --reuid=0 --regid=$AGH_GID --clear-groups "$BIN_DIR/AdGuardHome" --no-check-update >/dev/null 2>&1 &
+        busybox setpriv --reuid=0 --regid=$AGH_GID --clear-groups "$BIN_DIR/AdGuardHome" --no-check-update --crash-log "$AGH_DIR/crash.log" --logfile discard >/dev/null 2>&1 &
         echo "$!" > "$PID_FILE"
     elif command -v setpriv >/dev/null 2>&1 && setpriv --reuid=0 --regid=$AGH_GID --clear-groups true 2>/dev/null; then
-        setpriv --reuid=0 --regid=$AGH_GID --clear-groups "$BIN_DIR/AdGuardHome" --no-check-update >/dev/null 2>&1 &
+        setpriv --reuid=0 --regid=$AGH_GID --clear-groups "$BIN_DIR/AdGuardHome" --no-check-update --crash-log "$AGH_DIR/crash.log" --logfile discard >/dev/null 2>&1 &
         echo "$!" > "$PID_FILE"
     elif command -v chpst >/dev/null 2>&1 && chpst -u 0:$AGH_GID true 2>/dev/null; then
-        chpst -u 0:$AGH_GID "$BIN_DIR/AdGuardHome" --no-check-update >/dev/null 2>&1 &
+        chpst -u 0:$AGH_GID "$BIN_DIR/AdGuardHome" --no-check-update --crash-log "$AGH_DIR/crash.log" --logfile discard >/dev/null 2>&1 &
         echo "$!" > "$PID_FILE"
     elif command -v su >/dev/null 2>&1 && su -g $AGH_GID -c true 2>/dev/null; then
-        su -g $AGH_GID -c "exec '$BIN_DIR/AdGuardHome' --no-check-update >/dev/null 2>&1" &
+        su -g $AGH_GID -c "TZ='${AGH_TZ:-}' GOMEMLIMIT=96MiB GOGC=50 SSL_CERT_DIR='/system/etc/security/cacerts/' SSL_CERT_FILE='$BIN_DIR/cacerts.pem' exec '$BIN_DIR/AdGuardHome' --no-check-update --crash-log '$AGH_DIR/crash.log' --logfile discard >/dev/null 2>&1" &
         echo "$!" > "$PID_FILE"
     else
-        "$BIN_DIR/AdGuardHome" --no-check-update >/dev/null 2>&1 &
+        "$BIN_DIR/AdGuardHome" --no-check-update --crash-log "$AGH_DIR/crash.log" --logfile discard >/dev/null 2>&1 &
         echo "$!" > "$PID_FILE"
     fi
 }
@@ -205,16 +207,21 @@ rebuild_sni() {
     for net in 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 169.254.0.0/16 224.0.0.0/4 240.0.0.0/4 0.0.0.0/8; do
         iptables -w 2 -t filter -A AGH_SNI -p tcp -m multiport --dports "$sni_ports" -d "$net" -j RETURN
     done
-    # 【工业级核心优化】：仅对每个全新 TCP 连接的前 3 个数据包进行 SNI 嗅探（握手 ClientHello 必在其中）
-    # 只要连接超过 3 个数据包，说明握手已完成，后续成千上万个视频/文件数据包直接在内核层放行（RETURN），绝不过队列！
+    # 【工业级核心优化】：适配 v2026-10-29 核心多段分片 TLS ClientHello 重组机制 (addSegmentLocked)
+    # 1. --tcp-flags SYN,FIN,RST NONE 在内核层直接跳过 SYN 握手包与 FIN/RST 挥手包（0 队列开销）
+    # 2. --connbytes 1:8 覆盖连接前 8 个出站包（含 1~6 个分片的后量子 X25519MLKEM768 超大 ClientHello，无论 ACK 或 PSH,ACK 均完整送入 snifilter 重组）
+    # 3. 第 9 个包及后续成千上万个音视频/文件数据流直接在内核层 RETURN 直通，彻底杜绝 NFQUEUE 满队列丢包与高延迟发热！
     if iptables -w 2 -t filter -A AGH_SNI -p tcp -m multiport --dports "$sni_ports" \
-        -m connbytes --connbytes 1:3 --connbytes-mode packets --connbytes-dir original \
+        --tcp-flags SYN,FIN,RST NONE \
+        -m connbytes --connbytes 1:8 --connbytes-mode packets --connbytes-dir original \
         -j NFQUEUE --queue-num "$sni_queue" --queue-bypass 2>/dev/null; then
         iptables -w 2 -t filter -A AGH_SNI -p tcp -m multiport --dports "$sni_ports" -j RETURN
     else
-        # 兼容无 connbytes 扩展模块的兜底规则：带 queue-bypass 且排除纯 ACK
+        # 兼容无 connbytes 扩展模块的兜底规则：仅跳过 <=80 字节的纯 ACK 空确认包，保留 1448B 分片 ClientHello 数据包
         iptables -w 2 -t filter -A AGH_SNI -p tcp -m multiport --dports "$sni_ports" \
-            --tcp-flags ALL ACK -j RETURN
+            -m length --length 0:80 --tcp-flags ALL ACK -j RETURN 2>/dev/null || \
+            iptables -w 2 -t filter -A AGH_SNI -p tcp -m multiport --dports "$sni_ports" \
+                --tcp-flags ALL ACK -j RETURN
         iptables -w 2 -t filter -A AGH_SNI -p tcp -m multiport --dports "$sni_ports" \
             --tcp-flags SYN,FIN,RST NONE \
             -j NFQUEUE --queue-num "$sni_queue" --queue-bypass
@@ -233,12 +240,15 @@ rebuild_sni() {
         ip6tables -w 2 -t filter -A AGH_SNI -p tcp -m multiport --dports "$sni_ports" -d "$net" -j RETURN
     done
     if ip6tables -w 2 -t filter -A AGH_SNI -p tcp -m multiport --dports "$sni_ports" \
-        -m connbytes --connbytes 1:3 --connbytes-mode packets --connbytes-dir original \
+        --tcp-flags SYN,FIN,RST NONE \
+        -m connbytes --connbytes 1:8 --connbytes-mode packets --connbytes-dir original \
         -j NFQUEUE --queue-num "$sni_queue" --queue-bypass 2>/dev/null; then
         ip6tables -w 2 -t filter -A AGH_SNI -p tcp -m multiport --dports "$sni_ports" -j RETURN
     else
         ip6tables -w 2 -t filter -A AGH_SNI -p tcp -m multiport --dports "$sni_ports" \
-            --tcp-flags ALL ACK -j RETURN
+            -m length --length 0:100 --tcp-flags ALL ACK -j RETURN 2>/dev/null || \
+            ip6tables -w 2 -t filter -A AGH_SNI -p tcp -m multiport --dports "$sni_ports" \
+                --tcp-flags ALL ACK -j RETURN
         ip6tables -w 2 -t filter -A AGH_SNI -p tcp -m multiport --dports "$sni_ports" \
             --tcp-flags SYN,FIN,RST NONE \
             -j NFQUEUE --queue-num "$sni_queue" --queue-bypass

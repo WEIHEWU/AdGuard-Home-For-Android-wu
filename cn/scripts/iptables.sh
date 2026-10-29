@@ -82,7 +82,7 @@ agh_has_dedicated_gid() {
     [ -n "$agh_pid" ] && [ "$(awk '/^Gid:/ {print $2}' "/proc/$agh_pid/status" 2>/dev/null)" = "$AGH_GID" ]
 }
 
-# 3. 启动 AdGuardHome（以 uid=0, gid=23333 启动，保持完整 Root 权限同时与 netd 彻底隔离）
+# 3. 启动 AdGuardHome（以 uid=0, gid=23333 启动，保持完整 Root 权限同时与 netd 彻底隔离，并限制 Go 内存占用）
 start_agh() {
     {
         case "$(getprop persist.sys.locale 2>/dev/null)" in
@@ -93,27 +93,29 @@ start_agh() {
     for rpf in /proc/sys/net/ipv4/conf/*/rp_filter; do
         [ -w "$rpf" ] && echo 2 > "$rpf" 2>/dev/null
     done
+    AGH_TZ="$(getprop persist.sys.timezone 2>/dev/null)"
+    [ -n "$AGH_TZ" ] && export TZ="$AGH_TZ"
     export SSL_CERT_DIR="/system/etc/security/cacerts/"
     [ -s "$BIN_DIR/cacerts.pem" ] && export SSL_CERT_FILE="$BIN_DIR/cacerts.pem"
-    export GOMEMLIMIT=65MiB
+    export GOMEMLIMIT=96MiB
     export GOGC=50
     if command -v busybox >/dev/null 2>&1 && busybox chpst -u 0:$AGH_GID true 2>/dev/null; then
-        busybox chpst -u 0:$AGH_GID "$BIN_DIR/AdGuardHome" --no-check-update >/dev/null 2>&1 &
+        busybox chpst -u 0:$AGH_GID "$BIN_DIR/AdGuardHome" --no-check-update --crash-log "$AGH_DIR/crash.log" --logfile discard >/dev/null 2>&1 &
         echo "$!" > "$PID_FILE"
     elif command -v busybox >/dev/null 2>&1 && busybox setpriv --reuid=0 --regid=$AGH_GID --clear-groups true 2>/dev/null; then
-        busybox setpriv --reuid=0 --regid=$AGH_GID --clear-groups "$BIN_DIR/AdGuardHome" --no-check-update >/dev/null 2>&1 &
+        busybox setpriv --reuid=0 --regid=$AGH_GID --clear-groups "$BIN_DIR/AdGuardHome" --no-check-update --crash-log "$AGH_DIR/crash.log" --logfile discard >/dev/null 2>&1 &
         echo "$!" > "$PID_FILE"
     elif command -v setpriv >/dev/null 2>&1 && setpriv --reuid=0 --regid=$AGH_GID --clear-groups true 2>/dev/null; then
-        setpriv --reuid=0 --regid=$AGH_GID --clear-groups "$BIN_DIR/AdGuardHome" --no-check-update >/dev/null 2>&1 &
+        setpriv --reuid=0 --regid=$AGH_GID --clear-groups "$BIN_DIR/AdGuardHome" --no-check-update --crash-log "$AGH_DIR/crash.log" --logfile discard >/dev/null 2>&1 &
         echo "$!" > "$PID_FILE"
     elif command -v chpst >/dev/null 2>&1 && chpst -u 0:$AGH_GID true 2>/dev/null; then
-        chpst -u 0:$AGH_GID "$BIN_DIR/AdGuardHome" --no-check-update >/dev/null 2>&1 &
+        chpst -u 0:$AGH_GID "$BIN_DIR/AdGuardHome" --no-check-update --crash-log "$AGH_DIR/crash.log" --logfile discard >/dev/null 2>&1 &
         echo "$!" > "$PID_FILE"
     elif command -v su >/dev/null 2>&1 && su -g $AGH_GID -c true 2>/dev/null; then
-        su -g $AGH_GID -c "exec '$BIN_DIR/AdGuardHome' --no-check-update >/dev/null 2>&1" &
+        su -g $AGH_GID -c "TZ='${AGH_TZ:-}' GOMEMLIMIT=96MiB GOGC=50 SSL_CERT_DIR='/system/etc/security/cacerts/' SSL_CERT_FILE='$BIN_DIR/cacerts.pem' exec '$BIN_DIR/AdGuardHome' --no-check-update --crash-log '$AGH_DIR/crash.log' --logfile discard >/dev/null 2>&1" &
         echo "$!" > "$PID_FILE"
     else
-        "$BIN_DIR/AdGuardHome" --no-check-update >/dev/null 2>&1 &
+        "$BIN_DIR/AdGuardHome" --no-check-update --crash-log "$AGH_DIR/crash.log" --logfile discard >/dev/null 2>&1 &
         echo "$!" > "$PID_FILE"
     fi
 }
@@ -192,6 +194,7 @@ rebuild_sni() {
         "$BIN_DIR/AdGuardHome.yaml" 2>/dev/null | head -n 1)
     [ -z "$sni_queue" ] && sni_queue=7
     [ -z "$sni_ports" ] && sni_ports="443,8443"
+    allow_uids=$(get_allowlist_uids)
 
     # --- IPv4 SNI 链配置 ---
     iptables -w 2 -t filter -N AGH_SNI 2>/dev/null
@@ -199,23 +202,28 @@ rebuild_sni() {
     # 始终豁免 AdGuardHome 自身进程 (uid 0 + gid 23333) 的出站 DoH 与规则订阅更新流量，免进 NFQUEUE 自嗅探
     iptables -w 2 -t filter -A AGH_SNI -m owner --uid-owner 0 --gid-owner "$AGH_GID" -j RETURN 2>/dev/null
     # 内核级豁免应用放行白名单 (app-allow.txt) 中的应用 UID，无需等前台检测即可 24 小时直通
-    for auid in $(get_allowlist_uids); do
+    for auid in $allow_uids; do
         iptables -w 2 -t filter -A AGH_SNI -m owner --uid-owner "$auid" -j RETURN 2>/dev/null
     done
     # 局域网私有网段与广播直接快速放行（不跳过 198.18.0.0/15，确保即便走 Fake-IP 的连接也能在 TLS 握手首包识别并拦截广告 SNI）
     for net in 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 169.254.0.0/16 224.0.0.0/4 240.0.0.0/4 0.0.0.0/8; do
         iptables -w 2 -t filter -A AGH_SNI -p tcp -m multiport --dports "$sni_ports" -d "$net" -j RETURN
     done
-    # 【工业级核心优化】：仅对每个全新 TCP 连接的前 3 个数据包进行 SNI 嗅探（握手 ClientHello 必在其中）
-    # 只要连接超过 3 个数据包，说明握手已完成，后续成千上万个视频/文件数据包直接在内核层放行（RETURN），绝不过队列！
+    # 【工业级核心优化】：适配 v2026-10-29 核心多段分片 TLS ClientHello 重组机制 (addSegmentLocked)
+    # 1. --tcp-flags SYN,FIN,RST NONE 在内核层直接跳过 SYN 握手包与 FIN/RST 挥手包（0 队列开销）
+    # 2. --connbytes 1:8 覆盖连接前 8 个出站包（含 1~6 个分片的后量子 X25519MLKEM768 超大 ClientHello，无论 ACK 或 PSH,ACK 均完整送入 snifilter 重组）
+    # 3. 第 9 个包及后续成千上万个音视频/文件数据流直接在内核层 RETURN 直通，彻底杜绝 NFQUEUE 满队列丢包与高延迟发热！
     if iptables -w 2 -t filter -A AGH_SNI -p tcp -m multiport --dports "$sni_ports" \
-        -m connbytes --connbytes 1:3 --connbytes-mode packets --connbytes-dir original \
+        --tcp-flags SYN,FIN,RST NONE \
+        -m connbytes --connbytes 1:8 --connbytes-mode packets --connbytes-dir original \
         -j NFQUEUE --queue-num "$sni_queue" --queue-bypass 2>/dev/null; then
         iptables -w 2 -t filter -A AGH_SNI -p tcp -m multiport --dports "$sni_ports" -j RETURN
     else
-        # 兼容无 connbytes 扩展模块的兜底规则：带 queue-bypass 且排除纯 ACK
+        # 兼容无 connbytes 扩展模块的兜底规则：仅跳过 <=80 字节的纯 ACK 空确认包，保留 1448B 分片 ClientHello 数据包
         iptables -w 2 -t filter -A AGH_SNI -p tcp -m multiport --dports "$sni_ports" \
-            --tcp-flags ALL ACK -j RETURN
+            -m length --length 0:80 --tcp-flags ALL ACK -j RETURN 2>/dev/null || \
+            iptables -w 2 -t filter -A AGH_SNI -p tcp -m multiport --dports "$sni_ports" \
+                --tcp-flags ALL ACK -j RETURN
         iptables -w 2 -t filter -A AGH_SNI -p tcp -m multiport --dports "$sni_ports" \
             --tcp-flags SYN,FIN,RST NONE \
             -j NFQUEUE --queue-num "$sni_queue" --queue-bypass
@@ -227,19 +235,22 @@ rebuild_sni() {
     ip6tables -w 2 -t filter -N AGH_SNI 2>/dev/null
     ip6tables -w 2 -t filter -A AGH_SNI -o lo -j RETURN
     ip6tables -w 2 -t filter -A AGH_SNI -m owner --uid-owner 0 --gid-owner "$AGH_GID" -j RETURN 2>/dev/null
-    for auid in $(get_allowlist_uids); do
+    for auid in $allow_uids; do
         ip6tables -w 2 -t filter -A AGH_SNI -m owner --uid-owner "$auid" -j RETURN 2>/dev/null
     done
     for net in ::1/128 fc00::/7 fe80::/10 ff00::/8; do
         ip6tables -w 2 -t filter -A AGH_SNI -p tcp -m multiport --dports "$sni_ports" -d "$net" -j RETURN
     done
     if ip6tables -w 2 -t filter -A AGH_SNI -p tcp -m multiport --dports "$sni_ports" \
-        -m connbytes --connbytes 1:3 --connbytes-mode packets --connbytes-dir original \
+        --tcp-flags SYN,FIN,RST NONE \
+        -m connbytes --connbytes 1:8 --connbytes-mode packets --connbytes-dir original \
         -j NFQUEUE --queue-num "$sni_queue" --queue-bypass 2>/dev/null; then
         ip6tables -w 2 -t filter -A AGH_SNI -p tcp -m multiport --dports "$sni_ports" -j RETURN
     else
         ip6tables -w 2 -t filter -A AGH_SNI -p tcp -m multiport --dports "$sni_ports" \
-            --tcp-flags ALL ACK -j RETURN
+            -m length --length 0:100 --tcp-flags ALL ACK -j RETURN 2>/dev/null || \
+            ip6tables -w 2 -t filter -A AGH_SNI -p tcp -m multiport --dports "$sni_ports" \
+                --tcp-flags ALL ACK -j RETURN
         ip6tables -w 2 -t filter -A AGH_SNI -p tcp -m multiport --dports "$sni_ports" \
             --tcp-flags SYN,FIN,RST NONE \
             -j NFQUEUE --queue-num "$sni_queue" --queue-bypass
