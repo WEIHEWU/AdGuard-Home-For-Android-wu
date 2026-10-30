@@ -134,15 +134,19 @@ if [ -f "$BACKUP_DIR/AdGuardHome.yaml" ] && [ -f "$BIN_DIR/AdGuardHome.yaml" ]; 
 fi
 
 if [ -f "$BACKUP_DIR/config.prop" ]; then
+    sed -i 's/\(VPN_DNS_TAKEOVER=[^O]*\)OPTIMISTIC_CACHE_MODE=/\1\nOPTIMISTIC_CACHE_MODE=/' "$BACKUP_DIR/config.prop" 2>/dev/null
+    [ -n "$(tail -c 1 "$SCRIPT_DIR/config.prop" 2>/dev/null)" ] && echo "" >> "$SCRIPT_DIR/config.prop"
     old_url=$(sed -n 's/^PROXY_URL=//p' "$BACKUP_DIR/config.prop" | tr -d '"' | tr -d "'")
     if [ -n "$old_url" ] && [ "$old_url" != " " ] && ! echo "$old_url" | grep -q "smjcdh\.top"; then
         sed -i "/^PROXY_URL=/d" "$SCRIPT_DIR/config.prop"
+        [ -n "$(tail -c 1 "$SCRIPT_DIR/config.prop" 2>/dev/null)" ] && echo "" >> "$SCRIPT_DIR/config.prop"
         echo "PROXY_URL=\"$old_url\"" >> "$SCRIPT_DIR/config.prop"
         i18n_print "- Preserved PROXY_URL from backup" "- 已从备份恢复 PROXY_URL"
     fi
     old_mode=$(sed -n 's/^OPTIMISTIC_CACHE_MODE=//p' "$BACKUP_DIR/config.prop" | tr -d '"' | tr -d "'")
     if [ -n "$old_mode" ]; then
         sed -i "/^OPTIMISTIC_CACHE_MODE=/d" "$SCRIPT_DIR/config.prop"
+        [ -n "$(tail -c 1 "$SCRIPT_DIR/config.prop" 2>/dev/null)" ] && echo "" >> "$SCRIPT_DIR/config.prop"
         echo "OPTIMISTIC_CACHE_MODE=\"$old_mode\"" >> "$SCRIPT_DIR/config.prop"
         i18n_print "- Preserved OPTIMISTIC_CACHE_MODE from backup" "- 已从备份恢复 OPTIMISTIC_CACHE_MODE"
     fi
