@@ -21,28 +21,25 @@ jobs:
       - name: Create GitHub Release and Upload Packages
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v20261028-Beta1
-          name: "AdGuard Home For Android 20261028-Beta1"
+          tag_name: v20261030-Beta1
+          name: "AdGuard Home For Android 20261030-Beta1"
           body: |
-            ### AdGuard Home For Android `20261028-Beta1`
+            ### AdGuard Home For Android `20261030-Beta1`
 
-            提供 **🌏 海外版 (Overseas)** 与 **🇨🇳 中国国内版 (CN)** 两个定制版本，均已内置最新配套的 **AdGuard Home Manager v2.24.10** 管理器应用。
+            提供 **🌏 海外版 (Overseas)** 与 **🇨🇳 中国国内版 (CN)** 两个定制版本，均已内置最新精简版 **AdGuard Home Manager v2.24.11（仅 8.2 MB）** 管理器应用。
 
-            #### 🆕 20261028-Beta1 更新亮点
-            - **临时 Root + 软重启 (`Soft Reboot`) 3 秒自愈加固 (`service.sh` & `iptables.sh`)**：
-              - 守护脚本顶部注入 `trap '' HUP` 免疫 `zygote` 重启时的 `SIGHUP` 连带强杀；
-              - 软重启重入时自动触发 `--reload` 补齐被 `netd` 清空的 `iptables` 链；
-              - 3 秒零派生成本（`[ -d "/proc/$last_netd_pid" ]`）实时追踪 `netd` 进程 PID，软重启后 `netd` 一旦重建，3 秒内立即自动重载全部 DNS / SNI 规则并刷新缓存。
-            - **海内外跨国漫游与雙向 VPN 零断流深度适配 (`AdGuardHome.yaml` & `iptables.sh`)**：
-              - 海外版与国内版互配跨国保底 `fallback_dns` 与 `bootstrap_dns`（海外版补充阿里/腾讯保底，国内版补充 Cloudflare/Quad9 保底并启用 `upstream_mode: parallel` 并行竞速），跨国漫游或特殊网络下绝不断网；
-              - 补齐 IPv6 代理/VPN 旁路豁免（放行 IPv6 Fake-IP `fc00::/18`、`fdfe:dcba:9876::/48`，以及 `bypass` 模式下的 `-o tun+/wg+/ppp+`），彻底消除开启翻墙 VPN 时的 IPv6 DNS 抢答泄漏与回环；
-              - `ADGUARD_DOT`（853/784/8853）按 VPN 模式智能分流：`bypass`（翻墙 VPN）放行隧道内 DoT，而 `takeover`（海外一键回国 VPN）拦截隧道内 DoT 迫使回落 53 端口，确保爱优腾/B站国内视频广告照常拦截；
-              - 开关 VPN 时仅执行轻量级 `cache_clear` + `ndc resolver flushenv`，废除每次切 VPN 重写 `dns_config` 导致的 Go 引擎重加载断流。
-            - **核心性能调优与极简瘦身 (`AdGuardHome.yaml` & `service.sh`)**：
-              - 释放移动端 DNS 缓存至 `4MB`（`cache_size: 4194304`），规则订阅体量上限提升至 `32MB`（`max_http_size: 33554432`），上游超时收敛至 `5s`（`upstream_timeout: 5s`）并设置 `max_goroutines: 100`；
-              - 在核心启动前预设 `rp_filter=2` 宽松反向路径校验，确保首包 SNI RST 秒断不卡顿；
-              - 移除 `customize.sh` 中阻碍热更新的 `chattr +i` 枷锁，将主守护轮询精简为单函数 `ensure_firewall_healthy` 并在休眠期间彻底零子进程唤醒。
+            #### 🆕 20261030-Beta1 更新亮点
+            - **去广告与防追踪能力全面增强（AdBlock 测试得分提升至 99%）**：
+              - 合并最新 `20261030` 核心，针对 Cookie 横幅、A/B 测试、错误监控（Sentry/Bugsnag 等）、邮件跟踪、联盟网络、社交跟踪器、OEM 与视频广告补充 1,400+ 条精准 DNS 拦截规则；
+              - 同步全量规则至模块默认备份（`default_user_rules.txt`），支持在管理器设置页一键恢复默认规则或自动补齐缺失规则；
+              - 内置蓝奏云静态资源域名（`statics.woozooo.com`）白名单豁免，解决蓝奏云分享链接无法下载问题。
+            - **纯内存环形缓冲区日志（零磁盘写入 I/O）**：
+              - `AdGuardHome.yaml` 默认启用 `file_enabled: false` 与 `size_memory: 500`，彻底告别后台历史日志无限写盘导致的闪存磨损与 I/O 卡顿。
+            - **配套管理器 AdGuard Home Manager v2.24.11 深度瘦身与性能优化**：
+              - 移除冗余图表与非核心周边页面，APK 体积由 20 MB 大幅缩减至 **8.2 MB**，模块刷机包体积由 35 MB 缩减至 **19 MB**；
+              - 修复「过滤器（黑名单 / 自定义规则 / 白名单）」切换掉帧问题，采用后台 `Isolate` 预计算 + `SliverFixedExtentList` 分批渲染；
+              - 完整保留首页 **「误杀排错中心」**（支持粘贴网页链接自动识别被拦截外链域名、本地规则库检索、应用复现抓包与一键放行）。
           files: |
-            releases/AdGuard_Home_For_Android_20261028_Beta1_Overseas.zip
-            releases/AdGuard_Home_For_Android_20261028_Beta1_CN.zip
+            releases/AdGuard_Home_For_Android_20261030_Beta1_Overseas.zip
+            releases/AdGuard_Home_For_Android_20261030_Beta1_CN.zip
             releases/AdGuardHomeManager.apk
