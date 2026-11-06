@@ -30,10 +30,6 @@ dns:
   ratelimit_whitelist: []
   refuse_any: true
   upstream_dns:
-    # --- 澳洲本土与大洋洲顶级域名优先分流：走 Cloudflare / Google / Quad9 澳洲 Anycast 超低延迟节点 ---
-    - '[/au/]https://1.1.1.1/dns-query'
-    - '[/au/]https://8.8.8.8/dns-query'
-    - '[/au/]https://9.9.9.9/dns-query'
     # --- 纯大陆境内政务/高校/铁路（无海外CDN）：走阿里/腾讯 DoH，防止海外递归节点解析超时 ---
     - '[/gov.cn/edu.cn/12306.cn/]https://223.5.5.5/dns-query'
     - '[/gov.cn/edu.cn/12306.cn/]https://1.12.12.12/dns-query'
