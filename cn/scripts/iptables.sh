@@ -194,6 +194,7 @@ rebuild_sni() {
         "$BIN_DIR/AdGuardHome.yaml" 2>/dev/null | head -n 1)
     [ -z "$sni_queue" ] && sni_queue=7
     [ -z "$sni_ports" ] && sni_ports="443,8443"
+    sni_drop_quic=$(awk '/^sni_filter:/{f=1} f && /drop_quic:/{print $2; exit}' "$BIN_DIR/AdGuardHome.yaml" 2>/dev/null)
     allow_uids=$(get_allowlist_uids)
 
     # --- IPv4 SNI 链配置 ---
@@ -209,6 +210,17 @@ rebuild_sni() {
     for net in 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 169.254.0.0/16 224.0.0.0/4 240.0.0.0/4 0.0.0.0/8; do
         iptables -w 2 -t filter -A AGH_SNI -p tcp -m multiport --dports "$sni_ports" -d "$net" -j RETURN
     done
+    # 阻断 VPN 虚拟隧道内 (tun+ / wg+ / ppp+) 或显式开启 drop_quic 时的 HTTP/3 (QUIC UDP 443/8443)，
+    # 强制浏览器/WebView 的异步 fetch/XHR/sendBeacon 毫秒级回退至 TCP 443 接受 SNI 审查，同时绝不影响物理网卡上的 Hysteria2/TUIC 等代理客户端
+    if [ "$sni_drop_quic" = "true" ]; then
+        iptables -w 2 -t filter -A AGH_SNI -p udp -m multiport --dports "$sni_ports" -j REJECT --reject-with icmp-port-unreachable 2>/dev/null || \
+            iptables -w 2 -t filter -A AGH_SNI -p udp -m multiport --dports "$sni_ports" -j DROP 2>/dev/null
+    else
+        for viface in tun+ wg+ ppp+; do
+            iptables -w 2 -t filter -A AGH_SNI -o "$viface" -p udp -m multiport --dports "$sni_ports" -j REJECT --reject-with icmp-port-unreachable 2>/dev/null || \
+                iptables -w 2 -t filter -A AGH_SNI -o "$viface" -p udp -m multiport --dports "$sni_ports" -j DROP 2>/dev/null
+        done
+    fi
     # 【工业级核心优化】：适配 v2026-10-29 核心多段分片 TLS ClientHello 重组机制 (addSegmentLocked)
     # 1. --tcp-flags SYN,FIN,RST NONE 在内核层直接跳过 SYN 握手包与 FIN/RST 挥手包（0 队列开销）
     # 2. --connbytes 1:8 覆盖连接前 8 个出站包（含 1~6 个分片的后量子 X25519MLKEM768 超大 ClientHello，无论 ACK 或 PSH,ACK 均完整送入 snifilter 重组）
@@ -241,6 +253,15 @@ rebuild_sni() {
     for net in ::1/128 fc00::/7 fe80::/10 ff00::/8; do
         ip6tables -w 2 -t filter -A AGH_SNI -p tcp -m multiport --dports "$sni_ports" -d "$net" -j RETURN
     done
+    if [ "$sni_drop_quic" = "true" ]; then
+        ip6tables -w 2 -t filter -A AGH_SNI -p udp -m multiport --dports "$sni_ports" -j REJECT --reject-with icmp6-port-unreachable 2>/dev/null || \
+            ip6tables -w 2 -t filter -A AGH_SNI -p udp -m multiport --dports "$sni_ports" -j DROP 2>/dev/null
+    else
+        for viface in tun+ wg+ ppp+; do
+            ip6tables -w 2 -t filter -A AGH_SNI -o "$viface" -p udp -m multiport --dports "$sni_ports" -j REJECT --reject-with icmp6-port-unreachable 2>/dev/null || \
+                ip6tables -w 2 -t filter -A AGH_SNI -o "$viface" -p udp -m multiport --dports "$sni_ports" -j DROP 2>/dev/null
+        done
+    fi
     if ip6tables -w 2 -t filter -A AGH_SNI -p tcp -m multiport --dports "$sni_ports" \
         --tcp-flags SYN,FIN,RST NONE \
         -m connbytes --connbytes 1:8 --connbytes-mode packets --connbytes-dir original \

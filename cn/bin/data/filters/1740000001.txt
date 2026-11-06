@@ -974,3 +974,5 @@
 *-ad.video.yximgs.com*
 *-ad.wtzw.com*
 *-be-pack-sign.pglstatp-toutiao.com*
+
+@@||statics.woozooo.com^
