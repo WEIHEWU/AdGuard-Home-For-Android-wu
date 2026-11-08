@@ -21,25 +21,22 @@ jobs:
       - name: Create GitHub Release and Upload Packages
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v20261030-Beta1
-          name: "AdGuard Home For Android 20261030-Beta1"
+          tag_name: v20261108-Beta1
+          name: "AdGuard Home For Android 20261108-Beta1"
           body: |
-            ### AdGuard Home For Android `20261030-Beta1`
+            ### AdGuard Home For Android `20261108-Beta1`
 
-            提供 **🌏 海外版 (Overseas)** 与 **🇨🇳 中国国内版 (CN)** 两个定制版本，均已内置最新精简版 **AdGuard Home Manager v2.24.11（仅 8.2 MB）** 管理器应用。
+            提供 **🌏 海外版 (Overseas)** 与 **🇨🇳 中国国内版 (CN)** 两个定制版本，均已内置最新精简版 **AdGuard Home Manager v2.24.12（仅 8.2 MB）** 管理器应用。
 
-            #### 🆕 20261030-Beta1 更新亮点
-            - **去广告与防追踪能力全面增强（AdBlock 测试得分提升至 99%）**：
-              - 合并最新 `20261030` 核心，针对 Cookie 横幅、A/B 测试、错误监控（Sentry/Bugsnag 等）、邮件跟踪、联盟网络、社交跟踪器、OEM 与视频广告补充 1,400+ 条精准 DNS 拦截规则；
-              - 同步全量规则至模块默认备份（`default_user_rules.txt`），支持在管理器设置页一键恢复默认规则或自动补齐缺失规则；
-              - 内置蓝奏云静态资源域名（`statics.woozooo.com`）白名单豁免，解决蓝奏云分享链接无法下载问题。
-            - **纯内存环形缓冲区日志（零磁盘写入 I/O）**：
-              - `AdGuardHome.yaml` 默认启用 `file_enabled: false` 与 `size_memory: 500`，彻底告别后台历史日志无限写盘导致的闪存磨损与 I/O 卡顿。
-            - **配套管理器 AdGuard Home Manager v2.24.11 深度瘦身与性能优化**：
-              - 移除冗余图表与非核心周边页面，APK 体积由 20 MB 大幅缩减至 **8.2 MB**，模块刷机包体积由 35 MB 缩减至 **19 MB**；
-              - 修复「过滤器（黑名单 / 自定义规则 / 白名单）」切换掉帧问题，采用后台 `Isolate` 预计算 + `SliverFixedExtentList` 分批渲染；
-              - 完整保留首页 **「误杀排错中心」**（支持粘贴网页链接自动识别被拦截外链域名、本地规则库检索、应用复现抓包与一键放行）。
+            #### 🆕 20261108-Beta1 更新亮点
+            - **彻底修复局域网/本地服务访问报错 ERR_TOO_MANY_RETRIES**：
+              - 内核网络层全协议局域网免检直通（LAN Bypass）：在 `AGH_SNI` 与 `ADGUARD_DOT` 规则链顶层全面放行私有网段（`127.0.0.0/8`, `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `169.254.0.0/16` 及 IPv6 对应段），杜绝连接重置与阻断死循环；
+              - 剔除规则库中对反向解析 PTR 的误杀（清理 `||in-addr.arpa^`），彻底恢复局域网设备 IP 互访与健康检查；
+              - 默认白名单放行局域网服务常见公共静态资源（如 `cdn.staticfile.org` 等），保证各类投影仪、TVBox、NAS Web 控制台秒开加载。
+            - **配套管理器 AdGuard Home Manager v2.24.12 同步升级**：
+              - 适配 Android 全端口明文 HTTP（Cleartext Traffic）访问支持；
+              - 智能识别纯 IP 及局域网地址，避免非标准端口被强制升级 HTTPS 造成协议握手死锁。
           files: |
-            releases/AdGuard_Home_For_Android_20261030_Beta1_Overseas.zip
-            releases/AdGuard_Home_For_Android_20261030_Beta1_CN.zip
+            releases/AdGuard_Home_For_Android_20261108_Beta1_Overseas.zip
+            releases/AdGuard_Home_For_Android_20261108_Beta1_CN.zip
             releases/AdGuardHomeManager.apk
