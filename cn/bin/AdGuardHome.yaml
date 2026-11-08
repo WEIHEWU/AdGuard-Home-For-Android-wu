@@ -145,6 +145,22 @@ whitelist_filters:
     id: 1721861844
 user_rules:
   # =====================================================================
+  # 局域网私有地址、反向解析 (PTR / mDNS) 与本地 Web 服务静态资源白名单
+  # =====================================================================
+  - '@@||127.0.0.0/8^$important'
+  - '@@||10.0.0.0/8^$important'
+  - '@@||172.16.0.0/12^$important'
+  - '@@||192.168.0.0/16^$important'
+  - '@@||169.254.0.0/16^$important'
+  - '@@||in-addr.arpa^$important'
+  - '@@||ip6.arpa^$important'
+  - '@@||home.arpa^$important'
+  - '@@||local^$important'
+  - '@@||lan^$important'
+  - '@@||localhost^$important'
+  - '@@||cdn.staticfile.org^$important'
+  - '@@||cdn.staticfile.net^$important'
+  # =====================================================================
   # Google 核心服务、Play 基础设施、Google Pay 与银行卡代币化 (Tokenization) 全链路白名单
   # 彻底解决 GMS 误杀、ERR_NAME_NOT_RESOLVED 以及 SNI 443 握手重置
   # =====================================================================

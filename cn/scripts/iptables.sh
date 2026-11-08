@@ -197,6 +197,10 @@ rebuild_sni() {
     sni_drop_quic=$(awk '/^sni_filter:/{f=1} f && /drop_quic:/{print $2; exit}' "$BIN_DIR/AdGuardHome.yaml" 2>/dev/null)
     allow_uids=$(get_allowlist_uids)
 
+    # --- 局域网与本地保留地址段全协议免检直通列表 (LAN / Loopback / Link-Local Bypass) ---
+    LAN_BYPASS_IPV4="127.0.0.0/8 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 169.254.0.0/16 224.0.0.0/4 240.0.0.0/4 0.0.0.0/8"
+    LAN_BYPASS_IPV6="::1/128 fc00::/7 fe80::/10 ff00::/8 ::ffff:127.0.0.0/104 ::ffff:10.0.0.0/104 ::ffff:172.16.0.0/108 ::ffff:192.168.0.0/112 ::ffff:169.254.0.0/112"
+
     # --- IPv4 SNI 链配置 ---
     iptables -w 2 -t filter -N AGH_SNI 2>/dev/null
     iptables -w 2 -t filter -A AGH_SNI -o lo -j RETURN
@@ -206,9 +210,9 @@ rebuild_sni() {
     for auid in $allow_uids; do
         iptables -w 2 -t filter -A AGH_SNI -m owner --uid-owner "$auid" -j RETURN 2>/dev/null
     done
-    # 局域网私有网段与广播直接快速放行（不跳过 198.18.0.0/15，确保即便走 Fake-IP 的连接也能在 TLS 握手首包识别并拦截广告 SNI）
-    for net in 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 169.254.0.0/16 224.0.0.0/4 240.0.0.0/4 0.0.0.0/8; do
-        iptables -w 2 -t filter -A AGH_SNI -p tcp -m multiport --dports "$sni_ports" -d "$net" -j RETURN
+    # 局域网私有网段与本地回环全协议、全端口直接快速放行（不限制端口与协议，避免 UDP/QUIC 阻断或非标端口受扰；不跳过 198.18.0.0/15 Fake-IP）
+    for net in $LAN_BYPASS_IPV4; do
+        iptables -w 2 -t filter -A AGH_SNI -d "$net" -j RETURN
     done
     # 阻断 VPN 虚拟隧道内 (tun+ / wg+ / ppp+) 或显式开启 drop_quic 时的 HTTP/3 (QUIC UDP 443/8443)，
     # 强制浏览器/WebView 的异步 fetch/XHR/sendBeacon 毫秒级回退至 TCP 443 接受 SNI 审查，同时绝不影响物理网卡上的 Hysteria2/TUIC 等代理客户端
@@ -250,8 +254,8 @@ rebuild_sni() {
     for auid in $allow_uids; do
         ip6tables -w 2 -t filter -A AGH_SNI -m owner --uid-owner "$auid" -j RETURN 2>/dev/null
     done
-    for net in ::1/128 fc00::/7 fe80::/10 ff00::/8; do
-        ip6tables -w 2 -t filter -A AGH_SNI -p tcp -m multiport --dports "$sni_ports" -d "$net" -j RETURN
+    for net in $LAN_BYPASS_IPV6; do
+        ip6tables -w 2 -t filter -A AGH_SNI -d "$net" -j RETURN 2>/dev/null
     done
     if [ "$sni_drop_quic" = "true" ]; then
         ip6tables -w 2 -t filter -A AGH_SNI -p udp -m multiport --dports "$sni_ports" -j REJECT --reject-with icmp6-port-unreachable 2>/dev/null || \
@@ -281,7 +285,7 @@ rebuild_sni() {
 }
 
 # 5b. DoT / DoQ 加密 DNS 端口（853, 784, 8853）智能防绕过链
-# 仅豁免 AdGuardHome 自身 (uid 0 + gid 23333)、放行名单应用 UID，以及「翻墙出国防污染模式」下的 VPN 虚拟网卡 (tun+ / wg+ / ppp+)；
+# 仅豁免 AdGuardHome 自身 (uid 0 + gid 23333)、放行名单应用 UID、局域网/回环私有地址，以及「翻墙出国防污染模式」下的 VPN 虚拟网卡 (tun+ / wg+ / ppp+)；
 # 在「回国加速模式」或未开 VPN 时拦截 853/784/8853，强制 netd 回退至 53 端口进入 AdGuardHome 过滤国内视频广告
 rebuild_dot_guard() {
     takeover_mode="${1:-0}"
@@ -293,11 +297,17 @@ rebuild_dot_guard() {
     ip6tables -w 2 -t filter -X ADGUARD_DOT 2>/dev/null
 
     allow_uids=$(get_allowlist_uids)
+    LAN_BYPASS_IPV4="127.0.0.0/8 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 169.254.0.0/16 224.0.0.0/4 240.0.0.0/4 0.0.0.0/8"
+    LAN_BYPASS_IPV6="::1/128 fc00::/7 fe80::/10 ff00::/8 ::ffff:127.0.0.0/104 ::ffff:10.0.0.0/104 ::ffff:172.16.0.0/108 ::ffff:192.168.0.0/112 ::ffff:169.254.0.0/112"
 
     iptables -w 2 -t filter -N ADGUARD_DOT 2>/dev/null
+    iptables -w 2 -t filter -A ADGUARD_DOT -o lo -j RETURN
     iptables -w 2 -t filter -A ADGUARD_DOT -m owner --uid-owner 0 --gid-owner "$AGH_GID" -j RETURN 2>/dev/null
     for auid in $allow_uids; do
         iptables -w 2 -t filter -A ADGUARD_DOT -m owner --uid-owner "$auid" -j RETURN 2>/dev/null
+    done
+    for net in $LAN_BYPASS_IPV4; do
+        iptables -w 2 -t filter -A ADGUARD_DOT -d "$net" -j RETURN
     done
     if [ "$takeover_mode" != "0" ]; then
         iptables -w 2 -t filter -A ADGUARD_DOT -o tun+ -j RETURN
@@ -311,9 +321,13 @@ rebuild_dot_guard() {
     iptables -w 2 -t filter -I OUTPUT 1 -j ADGUARD_DOT
 
     ip6tables -w 2 -t filter -N ADGUARD_DOT 2>/dev/null
+    ip6tables -w 2 -t filter -A ADGUARD_DOT -o lo -j RETURN
     ip6tables -w 2 -t filter -A ADGUARD_DOT -m owner --uid-owner 0 --gid-owner "$AGH_GID" -j RETURN 2>/dev/null
     for auid in $allow_uids; do
         ip6tables -w 2 -t filter -A ADGUARD_DOT -m owner --uid-owner "$auid" -j RETURN 2>/dev/null
+    done
+    for net in $LAN_BYPASS_IPV6; do
+        ip6tables -w 2 -t filter -A ADGUARD_DOT -d "$net" -j RETURN 2>/dev/null
     done
     if [ "$takeover_mode" != "0" ]; then
         ip6tables -w 2 -t filter -A ADGUARD_DOT -o tun+ -j RETURN
