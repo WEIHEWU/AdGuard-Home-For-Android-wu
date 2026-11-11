@@ -135,17 +135,9 @@ filters:
     name: AWAvenue-Ads-Rule (秋风广告规则)
     id: 1740000001
   - enabled: true
-    url: https://adguardteam.github.io/HostlistsRegistry/assets/filter_1.txt
-    name: AdGuard DNS filter
-    id: 1
-  - enabled: true
     url: https://adguardteam.github.io/HostlistsRegistry/assets/filter_11.txt
     name: Malicious URL Blocklist (URLHaus)
     id: 1735560833
-  - enabled: true
-    url: https://adguardteam.github.io/HostlistsRegistry/assets/filter_8.txt
-    name: NoCoin Filter List
-    id: 8
 whitelist_filters:
   - enabled: true
     url: https://raw.githubusercontent.com/8680/GOODBYEADS/master/data/rules/allow.txt
@@ -1188,7 +1180,7 @@ user_rules:
   - '#拦截腾讯微信相关域名'
   - '#针对两步路户外助手广告拦截'
   - '||shop45920354.m.youzan.com^$important'
-  - '||ad.2bulu.com^$important' # 修复原版ad.*过宽通配误杀澳洲大学与企业ad.xxx活动目录SSO
+  - '||ad.2bulu.com^$important'
   - '||admobile.top^$important'
   - '#针对车来了APP的拦截规则'
   - '||image3.chelaile.net.cn^$important'
@@ -1909,6 +1901,24 @@ user_rules:
   - '||adriver.ru^$important'
   - '||adfox.ru^$important'
   - '||openx.net^$important'
+  - '@@||xn--ehqx35aimmzwv.com^$important'
+  - '#屏蔽顺丰同城更新检测域名'
+  - '||goic.sf-express.com^$important'
+  - '||ccsp-egmas.sf-express.com^$important'
+  - '||xaywl.top^$important'
+  - '||z7e9h3es.top^$important'
+  - '||etgahx.cn^$important'
+  - '||33495737.com^$important'
+  - '||v38w6w.top^$important'
+  - '||afxgnjg.cn^$important'
+  - '||7hgwx.com^$important'
+  - '||275ldy0608.cc^$important'
+  - '||2750249.cc^$important'
+  - '||api-dc2-prod-08.cyou^$important'
+  - '||elsmjsttx.cc^$important'
+  - '||yvresguot.cc^$important'
+  - '||moiqlwyyfmauwpyhcfezmtnxz.com^$important'
+  - '@@||pages-fast.m.taobao.com^$important'
 filtering:
   blocking_ipv4: ""
   blocking_ipv6: ""
@@ -1935,9 +1945,6 @@ sni_filter:
     - 443
     - 8443
   queue_num: 7
-  uids:
-    - 10000-19999
-  enabled: true
   drop_quic: false
 clients:
   runtime_sources:

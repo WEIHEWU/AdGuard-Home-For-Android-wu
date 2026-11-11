@@ -24,34 +24,6 @@ redir_port=${redir_port:-31587}
 ENABLE_SNI=${ENABLE_SNI:-1}
 VPN_DNS_TAKEOVER=${VPN_DNS_TAKEOVER:-auto}
 
-# 统一 HTTP 调用封装：优先使用 curl，若 ROM 未内置 curl 则自动回退至 busybox wget / wget
-agh_api_get() {
-    url="$1"
-    if command -v curl >/dev/null 2>&1; then
-        curl -s -m 3 -u root:root "$url" 2>/dev/null
-    elif command -v busybox >/dev/null 2>&1; then
-        busybox wget -q -T 3 -O - --header="Authorization: Basic cm9vdDpyb290" "$url" 2>/dev/null
-    elif command -v wget >/dev/null 2>&1; then
-        wget -q -T 3 -O - --header="Authorization: Basic cm9vdDpyb290" "$url" 2>/dev/null
-    fi
-}
-
-agh_api_post() {
-    url="$1"
-    data="$2"
-    if command -v curl >/dev/null 2>&1; then
-        if [ -n "$data" ]; then
-            curl -s -m 3 -u root:root -X POST "$url" -H "Content-Type: application/json" -d "$data" >/dev/null 2>&1
-        else
-            curl -s -m 3 -u root:root -X POST "$url" >/dev/null 2>&1
-        fi
-    elif command -v busybox >/dev/null 2>&1; then
-        busybox wget -q -T 3 -O /dev/null --header="Authorization: Basic cm9vdDpyb290" --header="Content-Type: application/json" --post-data="${data:-}" "$url" >/dev/null 2>&1
-    elif command -v wget >/dev/null 2>&1; then
-        wget -q -T 3 -O /dev/null --header="Authorization: Basic cm9vdDpyb290" --header="Content-Type: application/json" --post-data="${data:-}" "$url" >/dev/null 2>&1
-    fi
-}
-
 # 1. 防止重复启动后台守护自身（允许 --reload / --apply-allowlist 单次极速热重载；若软重启重新触发本脚本，先重载规则再退出）
 if [ "$1" != "--reload" ] && [ "$1" != "--apply-allowlist" ]; then
     for pid in $(pidof -x "$0" 2>/dev/null); do
@@ -76,13 +48,7 @@ agh_running() {
     pidof AdGuardHome >/dev/null 2>&1
 }
 
-# 检测当前 AdGuardHome 进程是否已绑定专属 GID 23333（与系统 netd [uid=0,gid=0] 物理隔离）
-agh_has_dedicated_gid() {
-    agh_pid=$(pidof AdGuardHome 2>/dev/null | awk '{print $1}')
-    [ -n "$agh_pid" ] && [ "$(awk '/^Gid:/ {print $2}' "/proc/$agh_pid/status" 2>/dev/null)" = "$AGH_GID" ]
-}
-
-# 3. 启动 AdGuardHome（以 uid=0, gid=23333 启动，保持完整 Root 权限同时与 netd 彻底隔离，并限制 Go 内存占用）
+# 3. 启动 AdGuardHome（统一使用 nsenter 绑定专属 GID 23333，保持完整 Root 权限同时与系统 netd [uid=0,gid=0] 彻底物理隔离）
 start_agh() {
     {
         case "$(getprop persist.sys.locale 2>/dev/null)" in
@@ -90,34 +56,16 @@ start_agh() {
             *)   echo "$(date '+%F %T') [INFO] Starting AdGuardHome with dedicated group (uid=0, gid=$AGH_GID)..." ;;
         esac
     } >> "$MAIN_LOG"
+    echo 0 > /proc/sys/net/ipv4/tcp_fastopen 2>/dev/null
     for rpf in /proc/sys/net/ipv4/conf/*/rp_filter; do
         [ -w "$rpf" ] && echo 2 > "$rpf" 2>/dev/null
     done
     AGH_TZ="$(getprop persist.sys.timezone 2>/dev/null)"
     [ -n "$AGH_TZ" ] && export TZ="$AGH_TZ"
-    export GOMEMLIMIT=96MiB
-    export GOGC=50
     export SSL_CERT_DIR="/system/etc/security/cacerts/"
     [ -s "$BIN_DIR/cacerts.pem" ] && export SSL_CERT_FILE="$BIN_DIR/cacerts.pem"
-    if command -v busybox >/dev/null 2>&1 && busybox chpst -u 0:$AGH_GID true 2>/dev/null; then
-        busybox chpst -u 0:$AGH_GID "$BIN_DIR/AdGuardHome" --no-check-update --crash-log "$AGH_DIR/crash.log" --logfile discard >/dev/null 2>&1 &
-        echo "$!" > "$PID_FILE"
-    elif command -v busybox >/dev/null 2>&1 && busybox setpriv --reuid=0 --regid=$AGH_GID --clear-groups true 2>/dev/null; then
-        busybox setpriv --reuid=0 --regid=$AGH_GID --clear-groups "$BIN_DIR/AdGuardHome" --no-check-update --crash-log "$AGH_DIR/crash.log" --logfile discard >/dev/null 2>&1 &
-        echo "$!" > "$PID_FILE"
-    elif command -v setpriv >/dev/null 2>&1 && setpriv --reuid=0 --regid=$AGH_GID --clear-groups true 2>/dev/null; then
-        setpriv --reuid=0 --regid=$AGH_GID --clear-groups "$BIN_DIR/AdGuardHome" --no-check-update --crash-log "$AGH_DIR/crash.log" --logfile discard >/dev/null 2>&1 &
-        echo "$!" > "$PID_FILE"
-    elif command -v chpst >/dev/null 2>&1 && chpst -u 0:$AGH_GID true 2>/dev/null; then
-        chpst -u 0:$AGH_GID "$BIN_DIR/AdGuardHome" --no-check-update --crash-log "$AGH_DIR/crash.log" --logfile discard >/dev/null 2>&1 &
-        echo "$!" > "$PID_FILE"
-    elif command -v su >/dev/null 2>&1 && su -g $AGH_GID -c true 2>/dev/null; then
-        su -g $AGH_GID -c "TZ='${AGH_TZ:-}' GOMEMLIMIT=96MiB GOGC=50 SSL_CERT_DIR='/system/etc/security/cacerts/' SSL_CERT_FILE='$BIN_DIR/cacerts.pem' exec '$BIN_DIR/AdGuardHome' --no-check-update --crash-log '$AGH_DIR/crash.log' --logfile discard >/dev/null 2>&1" &
-        echo "$!" > "$PID_FILE"
-    else
-        "$BIN_DIR/AdGuardHome" --no-check-update --crash-log "$AGH_DIR/crash.log" --logfile discard >/dev/null 2>&1 &
-        echo "$!" > "$PID_FILE"
-    fi
+    nsenter -G $AGH_GID -t 1 "$BIN_DIR/AdGuardHome" --no-check-update --crash-log "$AGH_DIR/crash.log" --logfile discard >/dev/null 2>&1 &
+    echo "$!" > "$PID_FILE"
 }
 
 # 4. 清理旧版本及冲突规则 (彻底杜绝粗暴封禁443/853导致VPN无法连接的问题)
@@ -132,28 +80,6 @@ clean_legacy_conflicts() {
     while ip6tables -w 2 -D OUTPUT -p udp --dport 443 -j REJECT 2>/dev/null; do :; done
 }
 
-# 提取配置文件中的上游与 Bootstrap DNS IP（仅对 uid 0 放行，防核心自回环死循环，同时拦截普通 App 直连公共 DNS）
-dns_bypass_addrs() {
-    [ -s "$BIN_DIR/AdGuardHome.yaml" ] || return 0
-    awk '
-        /^[a-zA-Z_]+:/ { section = ($0 ~ /^dns:/) ? "dns" : "" }
-        section == "dns" {
-            line = $0
-            gsub(/[^0-9a-fA-F:.]+/, " ", line)
-            n = split(line, a, /[[:space:]]+/)
-            for (i = 1; i <= n; i++) {
-                tok = a[i]
-                if (tok ~ /^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+:[0-9]+$/) sub(/:[0-9]+$/, "", tok)
-                if (tok ~ /^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$/) {
-                    if (tok != "127.0.0.1" && tok != "127.0.0.0" && tok != "0.0.0.0" && !seen[tok]++) print tok
-                } else if (tok ~ /^[0-9a-fA-F:]+:[0-9a-fA-F:]+$/) {
-                    if (tok != "::1" && tok != "::" && !seen[tok]++) print tok
-                }
-            }
-        }
-    ' "$BIN_DIR/AdGuardHome.yaml" 2>/dev/null
-}
-
 # 解析放行名单 (/data/adb/agh/app-allow.txt) 对应的 Android 应用 UID，实现内核层 0 延迟精准按应用分流
 get_allowlist_uids() {
     [ -s "$AGH_DIR/app-allow.txt" ] && [ -r /data/system/packages.list ] || return 0
@@ -164,8 +90,10 @@ get_allowlist_uids() {
             if ($0 != "" && $0 !~ /^#/) allow[$0] = 1
             next
         }
-        ($1 in allow) && $2 ~ /^[0-9]+$/ { print $2 }
-    ' "$AGH_DIR/app-allow.txt" /data/system/packages.list 2>/dev/null | sort -u
+        ($1 in allow) && $2 ~ /^[0-9]+$/ {
+            if (!seen[$2]++) print $2
+        }
+    ' "$AGH_DIR/app-allow.txt" /data/system/packages.list 2>/dev/null
 }
 
 # 5. 精准 SNI 队列规则（首包严密盘查，承载数据流秒级直通 + 宽松 rp_filter 彻底消灭 TCP RST 假死转圈）
@@ -178,10 +106,7 @@ rebuild_sni() {
     ip6tables -w 2 -t filter -F AGH_SNI 2>/dev/null
     ip6tables -w 2 -t filter -X AGH_SNI 2>/dev/null
 
-    # 同时遵循 config.prop 的 ENABLE_SNI 与 AdGuardHome.yaml 中的 sni_filter.enabled
     [ "$ENABLE_SNI" = "0" ] && return 0
-    sni_yaml_enabled=$(awk '/^sni_filter:/{f=1} f && /enabled:/{print $2; exit}' "$BIN_DIR/AdGuardHome.yaml" 2>/dev/null)
-    [ "$sni_yaml_enabled" = "false" ] && return 0
 
     # 将所有网卡 rp_filter 设为宽松模式 (2)，根治上游核心 snifilter 发送伪造 TCP RST 时因严格反向路径校验失败导致 App 卡顿转圈 10~30 秒的顽疾
     for rpf in /proc/sys/net/ipv4/conf/*/rp_filter; do
@@ -424,18 +349,6 @@ apply_rules() {
     for auid in $allow_uids; do
         iptables -w 2 -t nat -A ADGUARD -m owner --uid-owner "$auid" -j RETURN 2>/dev/null
     done
-    if ! agh_has_dedicated_gid; then
-        # 极端环境兜底：若 GID 未隔离，仅对非 53 端口放行，确保 netd 的 53 端口永不绕过
-        for addr in $(dns_bypass_addrs); do
-            case "$addr" in
-                *:*) ;;
-                *)
-                    iptables -w 2 -t nat -A ADGUARD -m owner --uid-owner 0 -d "$addr" -p udp ! --dport 53 -j RETURN 2>/dev/null
-                    iptables -w 2 -t nat -A ADGUARD -m owner --uid-owner 0 -d "$addr" -p tcp ! --dport 53 -j RETURN 2>/dev/null
-                    ;;
-            esac
-        done
-    fi
     # 根据纯本地智能识别结果动态配置 VPN DNS 策略：
     # takeover_vpn=0 时（海外环境 / 回国加速 / 未开 VPN）：所有 53 端口请求（含发往 TUN 虚拟 DNS 172.19.0.2/198.18.0.2 的查询）全部重定向至 AdGuardHome
     # takeover_vpn!=0 时（漫游回大陆且开启翻墙防污染 VPN）：放行 Fake-IP 与 VPN 虚拟网卡 (tun+ / wg+ / ppp+) 的 53 端口，由 AGH_SNI 在 443 握手层拦截广告
@@ -570,17 +483,12 @@ refresh_network() {
     ndc resolver flushenv 2>/dev/null
 }
 
-# 10. 【吸收项 2】开机单次启动健康预检 (Pre-flight Check，杜绝配置错乱变砖)
+# 10. 开机单次启动健康预检 (Pre-flight Check，等待过滤规则加载与端口就绪后再挂载规则)
 preflight_check() {
-    if agh_running && ! agh_has_dedicated_gid; then
-        # 若检测到旧进程未绑定专属 GID (23333)，自动重启切换至隔离用户组
-        killall -9 AdGuardHome 2>/dev/null || kill -9 $(pidof AdGuardHome 2>/dev/null) 2>/dev/null
-        sleep 1
-    fi
     agh_running || start_agh
     port_hex=$(printf '%04X' "$redir_port")
-    for i in 1 2 3 4 5; do
-        if grep -q ":$port_hex " /proc/net/udp 2>/dev/null || grep -q ":$port_hex " /proc/net/udp6 2>/dev/null; then
+    for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
+        if grep -qi ":$port_hex " /proc/net/udp /proc/net/udp6 2>/dev/null; then
             agh_real_pid=$(pidof AdGuardHome 2>/dev/null | awk '{print $1}')
             [ -n "$agh_real_pid" ] && echo "$agh_real_pid" > "$PID_FILE"
             echo "$(date '+%F %T') [PRE-FLIGHT] 本地 DNS 端口 ($redir_port) 就绪，执行规则接管。" >> "$MAIN_LOG"
@@ -592,7 +500,7 @@ preflight_check() {
     return 1
 }
 
-# 11. 【吸收项 1】VPN 自动识别与零断流缓存冲洗状态机 (带 6 秒防抖冷却，专治弱网闪断，不重写配置文件不重启核心监听)
+# 11. VPN 自动识别与零断流状态机 (带 6 秒防抖冷却，专治弱网闪断，不重写配置文件不重启核心监听)
 vpn_status_last="init"
 vpn_pending_status=""
 vpn_pending_count=0
@@ -620,7 +528,7 @@ check_vpn_and_cache() {
         return 0
     fi
 
-    # 状态发生变化：启动防抖冷却确认机制（避免极端弱网下频繁闪断导致的重复清空缓存）
+    # 状态发生变化：启动防抖冷却确认机制（避免极端弱网下频繁闪断导致的重复切换）
     if [ "$vpn_now" = "$vpn_pending_status" ]; then
         vpn_pending_count=$((vpn_pending_count + 1))
     else
@@ -633,14 +541,10 @@ check_vpn_and_cache() {
         # 重新执行一次本地智能识别并更新 iptables ADGUARD / ADGUARD6_NAT / ADGUARD_DOT 规则链（0 网络包、单次执行）
         apply_rules
         vpn_mode_cur=$(cat "$AGH_DIR/vpn_mode_status" 2>/dev/null)
-        http_port=$(sed -n 's/^[[:space:]]*address:[[:space:]]*127\.0\.0\.1:\([0-9]*\).*/\1/p' "$BIN_DIR/AdGuardHome.yaml" 2>/dev/null | head -n 1)
-        if [ -n "$http_port" ]; then
-            agh_api_post "http://127.0.0.1:$http_port/control/cache_clear" ""
-        fi
         ndc resolver flushenv 2>/dev/null
         if [ "$vpn_now" = "on" ]; then
             if [ "$vpn_mode_cur" = "takeover" ]; then
-                echo "$(date '+%F %T') [VPN] 检测到 VPN 已连接，智能识别为「回国加速去广告模式」（强制接管 DNS 并清空旧缓存）" >> "$MAIN_LOG"
+                echo "$(date '+%F %T') [VPN] 检测到 VPN 已连接，智能识别为「回国加速去广告模式」（强制接管 DNS 并刷新系统解析缓存）" >> "$MAIN_LOG"
             else
                 echo "$(date '+%F %T') [VPN] 检测到 VPN 已连接，智能识别为「翻墙出国防污染模式」（放行 VPN 隧道 DNS，由 SNI 拦截广告）" >> "$MAIN_LOG"
             fi
@@ -650,131 +554,6 @@ check_vpn_and_cache() {
         vpn_status_last="$vpn_now"
         vpn_pending_status=""
         vpn_pending_count=0
-    fi
-}
-
-# 零开销优先读取内核 sysfs 背光亮度判定亮息屏，不可读时再回退 dumpsys
-is_device_screen_on() {
-    for bl in /sys/class/leds/lcd-backlight/brightness /sys/class/backlight/*/brightness; do
-        if [ -r "$bl" ]; then
-            val=$(cat "$bl" 2>/dev/null)
-            case "$val" in
-                ""|0) return 1 ;;
-                *) return 0 ;;
-            esac
-        fi
-    done
-    dumpsys power 2>/dev/null | grep -qE 'mHoldingDisplaySuspendBlocker=true|mHoldingDisplay=true|mWakefulness=Awake|Display Power: state=ON'
-}
-
-# 12. 前台放行名单应用动态感应（优先使用零开销 /dev/cpuset/top-app 读取，亮屏且名单应用在前台时自动暂停过滤，离开或息屏后恢复）
-app_pause_last=""
-check_app_allowlist() {
-    # 若放行名单文件不存在或为空，直接快速返回
-    [ -s "$AGH_DIR/app-allow.txt" ] || return 0
-
-    # 优先通过零开销内核 /dev/cpuset/top-app/cgroup.procs 读取前台进程包名（无需 fork 昂贵的 dumpsys）
-    current=""
-    if [ -r "/dev/cpuset/top-app/cgroup.procs" ]; then
-        for tpid in $(cat /dev/cpuset/top-app/cgroup.procs 2>/dev/null); do
-            pkg=$(tr '\0' '\n' < "/proc/$tpid/cmdline" 2>/dev/null | head -n 1)
-            case "$pkg" in
-                *.*.*)
-                    pkg="${pkg%%:*}"
-                    if grep -qxF "$pkg" "$AGH_DIR/app-allow.txt" 2>/dev/null; then
-                        current="$pkg"
-                        break
-                    fi
-                    [ -z "$current" ] && current="$pkg"
-                    ;;
-            esac
-        done
-    fi
-
-    # 仅在必要时检测亮屏状态（优先读 sysfs 背光亮度，0 Binder 开销）
-    is_screen_on="1"
-    if [ -z "$current" ] || [ -f "$AGH_DIR/app_pause_active" ] || grep -qxF "$current" "$AGH_DIR/app-allow.txt" 2>/dev/null; then
-        is_screen_on="0"
-        if is_device_screen_on; then
-            is_screen_on="1"
-        fi
-    fi
-
-    if [ "$is_screen_on" = "0" ]; then
-        if [ -f "$AGH_DIR/app_pause_active" ]; then
-            http_port=$(sed -n 's/^[[:space:]]*address:[[:space:]]*127\.0\.0\.1:\([0-9]*\).*/\1/p' "$BIN_DIR/AdGuardHome.yaml" 2>/dev/null | head -n 1)
-            [ -n "$http_port" ] && agh_api_post "http://127.0.0.1:$http_port/control/protection" '{"enabled":true}'
-            rm -f "$AGH_DIR/app_pause_active" 2>/dev/null
-            app_pause_last=""
-        fi
-        return 0
-    fi
-
-    if [ -z "$current" ]; then
-        current=$(dumpsys activity activities 2>/dev/null | awk '/topResumedActivity|ResumedActivity/ {for(i=1;i<=NF;i++) if($i ~ /\//) {split($i,a,"/"); gsub(/[^a-zA-Z0-9._]/,"",a[1]); if(a[1] ~ /\./) {print a[1]; exit}}}')
-    fi
-
-    [ "$current" = "$app_pause_last" ] && return 0
-    app_pause_last="$current"
-
-    http_port=$(sed -n 's/^[[:space:]]*address:[[:space:]]*127\.0\.0\.1:\([0-9]*\).*/\1/p' "$BIN_DIR/AdGuardHome.yaml" 2>/dev/null | head -n 1)
-    [ -z "$http_port" ] && return 0
-
-    if [ -n "$current" ] && grep -qxF "$current" "$AGH_DIR/app-allow.txt" 2>/dev/null; then
-        if [ ! -f "$AGH_DIR/app_pause_active" ]; then
-            agh_api_post "http://127.0.0.1:$http_port/control/protection" '{"enabled":false}'
-            agh_api_post "http://127.0.0.1:$http_port/control/cache_clear" ""
-            ndc resolver flushenv 2>/dev/null
-            echo "1" > "$AGH_DIR/app_pause_active"
-            echo "$(date '+%F %T') [APP-ALLOW] 检测到放行应用在前台 ($current)，已自动暂停 DNS 过滤并冲洗缓存" >> "$MAIN_LOG"
-        fi
-    else
-        if [ -f "$AGH_DIR/app_pause_active" ]; then
-            agh_api_post "http://127.0.0.1:$http_port/control/protection" '{"enabled":true}'
-            rm -f "$AGH_DIR/app_pause_active" 2>/dev/null
-            echo "$(date '+%F %T') [APP-ALLOW] 放行应用已离开前台，已自动恢复 DNS 过滤" >> "$MAIN_LOG"
-        fi
-    fi
-}
-
-# 13. 15 天图表统计轻量持久化（每小时聚合 1 次，零写盘损耗）
-sample_datachart() {
-    http_port=$(sed -n 's/^[[:space:]]*address:[[:space:]]*127\.0\.0\.1:\([0-9]*\).*/\1/p' "$BIN_DIR/AdGuardHome.yaml" 2>/dev/null | head -n 1)
-    [ -z "$http_port" ] && return 0
-
-    stats_json=$(agh_api_get "http://127.0.0.1:$http_port/control/stats")
-    q=$(echo "$stats_json" | sed -n 's/.*"num_dns_queries":[[:space:]]*\([0-9]*\).*/\1/p')
-    b=$(echo "$stats_json" | sed -n 's/.*"num_blocked_filtering":[[:space:]]*\([0-9]*\).*/\1/p')
-    [ -n "$q" ] && [ -n "$b" ] || return 0
-
-    now=$(date +%s)
-    hour=$((now / 3600 * 3600))
-    prev_q=$(cat "$AGH_DIR/datachart_q" 2>/dev/null)
-    prev_b=$(cat "$AGH_DIR/datachart_b" 2>/dev/null)
-    dq=0; db=0
-    if [ -n "$prev_q" ] && [ -n "$prev_b" ]; then
-        if [ "$q" -ge "$prev_q" ]; then
-            dq=$((q - prev_q))
-            db=$((b - prev_b))
-        else
-            dq=$q; db=$b
-        fi
-    fi
-    echo "$q" > "$AGH_DIR/datachart_q"
-    echo "$b" > "$AGH_DIR/datachart_b"
-
-    if [ $((dq + db)) -gt 0 ]; then
-        awk -v h="$hour" -v dq="$dq" -v db="$db" '
-            $1 == h { $2 += dq; $3 += db; found = 1 }
-            { print }
-            END { if (!found) print h, dq, db }
-        ' "$AGH_DIR/datachart.txt" 2>/dev/null | sort -n > "$AGH_DIR/datachart.txt.tmp" && mv -f "$AGH_DIR/datachart.txt.tmp" "$AGH_DIR/datachart.txt"
-    fi
-
-    # 清除 15 天前的数据
-    cutoff=$((now - 15 * 86400))
-    if [ -f "$AGH_DIR/datachart.txt" ]; then
-        awk -v c="$cutoff" '$1 >= c' "$AGH_DIR/datachart.txt" > "$AGH_DIR/datachart.txt.tmp" && mv -f "$AGH_DIR/datachart.txt.tmp" "$AGH_DIR/datachart.txt"
     fi
 }
 
@@ -791,23 +570,17 @@ clean_hotspot_rules
 
 # 执行启动预检：只有本地服务真实就绪才挂载规则，杜绝开机静默变砖
 if preflight_check; then
-    # 开机/重启脚本时若存在上次异常残留的暂停标记，立即恢复 DNS 过滤保护
-    if [ -f "$AGH_DIR/app_pause_active" ]; then
-        init_http_port=$(sed -n 's/^[[:space:]]*address:[[:space:]]*127\.0\.0\.1:\([0-9]*\).*/\1/p' "$BIN_DIR/AdGuardHome.yaml" 2>/dev/null | head -n 1)
-        [ -n "$init_http_port" ] && agh_api_post "http://127.0.0.1:$init_http_port/control/protection" '{"enabled":true}'
-        rm -f "$AGH_DIR/app_pause_active" 2>/dev/null
-    fi
     apply_rules
     refresh_network
 fi
 
-# --- 轻量化守护循环：秒级感应软重启 netd 重建、VPN 切换与应用白名单，60 秒维持规则与图表采样 ---
+# --- 轻量化守护循环：秒级感应软重启 netd 重建与 VPN 切换，60 秒维持规则自愈 ---
 last_netd_pid=$(pidof netd 2>/dev/null | awk '{print $1}')
 loop_cnt=0
 while true; do
     sleep 3
 
-    # 【吸收项 3】检测模块是否被用户在管理器中停用，若是则立即干净还原并退出
+    # 检测模块是否被用户在管理器中停用，若是则立即干净还原并退出
     if [ -f "/data/adb/modules/AdGuardHome/disable" ]; then
         clean_all_rules
         killall -9 AdGuardHome 2>/dev/null || kill -9 $(pidof AdGuardHome 2>/dev/null) 2>/dev/null
@@ -831,9 +604,6 @@ while true; do
     # 极速秒级检查 VPN 状态切换（0% CPU）
     check_vpn_and_cache
 
-    # 亮屏前台放行应用状态感应（0% 息屏占用）
-    check_app_allowlist
-
     loop_cnt=$((loop_cnt + 3))
     if [ "$loop_cnt" -ge 60 ]; then
         loop_cnt=0
@@ -843,22 +613,12 @@ while true; do
             start_agh
             sleep 2
             apply_rules
-        elif ! agh_has_dedicated_gid; then
-            killall -9 AdGuardHome 2>/dev/null || kill -9 $(pidof AdGuardHome 2>/dev/null) 2>/dev/null
-            sleep 1
-            start_agh
-            sleep 2
-            apply_rules
         fi
 
-        # 每 60 秒轻量采样图表数据到 datachart.txt
-        sample_datachart
-
-        # 检查 OUTPUT 挂载点、ADGUARD 重定向规则及 AGH_SNI 规则是否被系统 netd 或核心内置 startFirewall 冲掉，若是则自动修复
-        sni_active=$(awk '/^sni_filter:/{f=1} f && /enabled:/{print $2; exit}' "$BIN_DIR/AdGuardHome.yaml" 2>/dev/null)
+        # 检查 OUTPUT 挂载点、ADGUARD 重定向规则及 AGH_SNI 规则是否被系统 netd 冲掉，若是则自动修复
         if ! iptables -w 2 -t nat -C OUTPUT -j ADGUARD 2>/dev/null || \
            ! iptables -w 2 -t nat -C ADGUARD -p udp --dport 53 -j REDIRECT --to-ports "$redir_port" 2>/dev/null || \
-           { [ "$sni_active" = "true" ] && ! iptables -w 2 -t filter -C AGH_SNI -o lo -j RETURN 2>/dev/null; }; then
+           { [ "${ENABLE_SNI:-1}" != "0" ] && ! iptables -w 2 -t filter -C AGH_SNI -o lo -j RETURN 2>/dev/null; }; then
             apply_rules
         fi
     fi

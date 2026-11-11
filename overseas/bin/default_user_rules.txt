@@ -1,6 +1,3 @@
-  # =====================================================================
-  # 局域网私有地址、反向解析 (PTR / mDNS) 与本地 Web 服务静态资源白名单
-  # =====================================================================
 @@||127.0.0.0/8^$important
 @@||10.0.0.0/8^$important
 @@||172.16.0.0/12^$important
@@ -14,11 +11,6 @@
 @@||localhost^$important
 @@||cdn.staticfile.org^$important
 @@||cdn.staticfile.net^$important
-  # =====================================================================
-  # Google 核心服务、Play 基础设施、Google Pay 与银行卡代币化 (Tokenization) 全链路白名单
-  # 彻底解决 GMS 误杀、ERR_NAME_NOT_RESOLVED 以及 SNI 443 握手重置
-  # =====================================================================
-  # --- Google 核心服务与 Play 基础设施（精确放行，绝不放行 ads/adservice 广告域名）---
 @@||play.google.com^$important
 @@||accounts.google.com^$important
 @@||myaccount.google.com^$important
@@ -29,20 +21,14 @@
 @@||gvt1.com^$important
 @@||gvt2.com^$important
 @@||ggpht.com^$important
-  # --- Google 钱包、支付、安全证明与 GMS 代币化核心端点 ---
 @@||payments.google.com^$important
 @@||wallet.google.com^$important
 @@||pay.google.com^$important
 @@||firebaseio.com^$important
-  # --- 国际卡组织代币化服务商 (TSP Token Service Provider) ---
 @@||visa.com^$important
 @@||mastercard.com^$important
 @@||americanexpress.com^$important
 @@||amex.com^$important
-  # =====================================================================
-  # 澳洲本土高频应用与服务白名单保护（彻底防止规则误杀，确保 100% 正常使用）
-  # =====================================================================
-  # --- 澳洲四大行及主流金融/移动支付 ---
 @@||commbank.com.au^$important
 @@||cba.com.au^$important
 @@||netbank.commbank.com.au^$important
@@ -57,7 +43,6 @@
 @@||bankwest.com.au^$important
 @@||stgeorge.com.au^$important
 @@||up.com.au^$important
-  # --- 澳洲联邦及州政府、医保与数字身份 ---
 @@||my.gov.au^$important
 @@||servicesaustralia.gov.au^$important
 @@||ato.gov.au^$important
@@ -65,7 +50,6 @@
 @@||digitalidentity.gov.au^$important
 @@||service.nsw.gov.au^$important
 @@||service.vic.gov.au^$important
-  # --- 澳洲八大名校及主流大学校园网与 Active Directory SSO 认证 ---
 @@||unimelb.edu.au^$important
 @@||sydney.edu.au^$important
 @@||usyd.edu.au^$important
@@ -79,7 +63,6 @@
 @@||uts.edu.au^$important
 @@||rmit.edu.au^$important
 @@||qut.edu.au^$important
-  # --- 澳洲主流运营商与宽带服务 ---
 @@||telstra.com^$important
 @@||telstra.com.au^$important
 @@||optus.com.au^$important
@@ -90,7 +73,6 @@
 @@||iinet.net.au^$important
 @@||belong.com.au^$important
 @@||boost.com.au^$important
-  # --- 澳洲本地日常购物、外卖出行与物流快递 ---
 @@||woolworths.com.au^$important
 @@||coles.com.au^$important
 @@||auspost.com.au^$important
@@ -105,7 +87,6 @@
 @@||officeworks.com.au^$important
 @@||amazon.com.au^$important
 @@||ebay.com.au^$important
-  # --- 澳洲本地官方媒体与流媒体播放 ---
 @@||abc.net.au^$important
 @@||sbs.com.au^$important
 @@||stan.com.au^$important
@@ -114,7 +95,6 @@
 @@||nine.com.au^$important
 @@||7plus.com.au^$important
 @@||10play.com.au^$important
-  # --- 海外日常支付、公共交通、全球通讯、流媒体历史记录与 AI 工具白名单 ---
 @@||paypal.com^$important
 @@||paypalobjects.com^$important
 @@||stripe.com^$important
@@ -147,7 +127,6 @@
 @@||chatgpt.com^$important
 @@||anthropic.com^$important
 @@||claude.ai^$important
-  # --- 海外使用国内高频 App（微信/支付宝/小红书/B站/淘宝）跨境直连与支付核心白名单 ---
 @@||wechat.com^$important
 @@||wx.qq.com^$important
 @@||qpic.cn^$important
@@ -164,7 +143,6 @@
 @@||bilivideo.com^$important
 @@||hdslb.com^$important
 @@||cainiao.com^$important
-  # --- 国内常用服务放行规则 ---
 #针对转转App的放行规则，勿删
 @@||zhuanzhuan.com^$important
 #针对天猫校园的拦截规则，勿删
@@ -1434,10 +1412,6 @@
 @@||m.sm.cn^$important
 #针对蓝奏云前端静态资源的误杀放行规则
 @@||statics.woozooo.com^$important
-  # =====================================================================
-  # 全维度隐私防追踪与去广告增强规则 (覆盖 Cookie横幅/AB测试/错误监控/邮件/联盟/社交/视频)
-  # 兼顾国内外用户日常应用体验，精确放行核心登录/API，实现 99%+ 综合拦截率
-  # =====================================================================
 # --- [隐私增强 1] Cookie 横幅与 GDPR 弹窗同意管理平台 (Consent / CMP) ---
 ||cookiebot.com^$important
 ||cookielaw.org^$important
@@ -1755,3 +1729,21 @@
 ||adriver.ru^$important
 ||adfox.ru^$important
 ||openx.net^$important
+@@||xn--ehqx35aimmzwv.com^$important
+#屏蔽顺丰同城更新检测域名
+||goic.sf-express.com^$important
+||ccsp-egmas.sf-express.com^$important
+||xaywl.top^$important
+||z7e9h3es.top^$important
+||etgahx.cn^$important
+||33495737.com^$important
+||v38w6w.top^$important
+||afxgnjg.cn^$important
+||7hgwx.com^$important
+||275ldy0608.cc^$important
+||2750249.cc^$important
+||api-dc2-prod-08.cyou^$important
+||elsmjsttx.cc^$important
+||yvresguot.cc^$important
+||moiqlwyyfmauwpyhcfezmtnxz.com^$important
+@@||pages-fast.m.taobao.com^$important

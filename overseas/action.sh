@@ -18,9 +18,9 @@ else
 fi
 
 # 2. 优先打开原生管理器 App，若未安装则回退打开浏览器 Web UI
-if pm path com.liuzq2002.adguard_home_manager >/dev/null 2>&1; then
+if pm path com.wu.adgogogo >/dev/null 2>&1; then
     echo "- 正在打开 AdGuard Home 管理器 App..."
-    am start -n com.liuzq2002.adguard_home_manager/.MainActivity >/dev/null 2>&1 && exit 0
+    am start -n com.wu.adgogogo/.MainActivity >/dev/null 2>&1 && exit 0
 fi
 
 PORT=$(sed -n 's/^[[:space:]]*address:[[:space:]]*127\.0\.0\.1:\([0-9]*\).*/\1/p' "$YAML_FILE" | head -n 1)
