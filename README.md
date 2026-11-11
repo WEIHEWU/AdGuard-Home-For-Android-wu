@@ -1,6 +1,6 @@
 # AdGuard-Home-gogogo
 
-**[📥 下载海外版模块 (Overseas)](https://github.com/WEIHEWU/AdGuard-Home-For-Android-wu/raw/main/releases/AdGuard_Home_gogogo_20261111_Overseas.zip)** · **[📥 下载国内版模块 (CN)](https://github.com/WEIHEWU/AdGuard-Home-For-Android-wu/raw/main/releases/AdGuard_Home_gogogo_20261111_CN.zip)** · **[📱 单独下载管理器 APK](https://github.com/WEIHEWU/AdGuard-Home-For-Android-wu/raw/main/releases/AdGuardHomeManager.apk)** · [Releases 页面](https://github.com/WEIHEWU/AdGuard-Home-For-Android-wu/releases)
+**[📥 下载全能统一模块包 (AdGuard_Home_gogogo_20261111.zip)](https://github.com/WEIHEWU/AdGuard-Home-For-Android-wu/raw/main/releases/AdGuard_Home_gogogo_20261111.zip)** · **[📱 单独下载管理器 APK](https://github.com/WEIHEWU/AdGuard-Home-For-Android-wu/raw/main/releases/AdGuardHomeManager.apk)** · [Releases 页面](https://github.com/WEIHEWU/AdGuard-Home-For-Android-wu/releases)
 
 基于 Magisk / KernelSU / APatch 的 **AdGuard-Home-gogogo**（模块显示名称：`AdGuard Home gogogo`）全设备级 DNS 与内核 NFQUEUE SNI 去广告模块。专为追求**极致省电、零断流、临时 Root 软重启兼容、以及 VPN / 代理无缝协同**打造。
 
@@ -8,9 +8,9 @@
 
 ---
 
-## 🌏 海外版 vs 🇨🇳 国内版 选择指南
+## 🌐 海外模式 vs 🇨🇳 国内模式（单包合一 · App 内一键热切换）
 
-两个版本共用完全相同的二进制核心、低功耗守护脚本与配套管理器（模块包内已内置 `AdGuard Home Manager`，刷入模块时会自动安装），仅针对所在物理网络环境定制了默认 DNS 与规则源：
+本模块已将「海外版」与「国内版」合并为单一全能刷机包（**初次刷入默认激活 🌐 海外模式**），模块包内已内置 `AdGuard-Home-gogogo Manager`，刷入后可在 App **首页快捷栏** 或 **DNS 设置页** 随时一键无损热切换：
 
 | 对比维度 | 🌏 海外版 (`Overseas`) | 🇨🇳 中国国内版 (`CN`) |
 | :--- | :--- | :--- |
@@ -48,13 +48,12 @@
 ## 🛠️ 目录结构与构建
 
 ```text
-├── overseas/        # 🌏 海外版模块完整源码
-├── cn/              # 🇨🇳 中国国内版模块完整源码
+├── module/          # 全能统一模块完整源码（含 overseas / cn 双预设与热切换脚本）
 ├── releases/        # 打包好的模块 zip 与配套管理器 APK
-└── build.sh         # 一键构建双版本模块脚本
+└── build.sh         # 一键构建统一模块包脚本
 ```
 
-在 macOS / Linux 下运行以下命令即可同时重新打包两个版本：
+在 macOS / Linux 下运行以下命令即可重新打包：
 
 ```bash
 chmod +x build.sh

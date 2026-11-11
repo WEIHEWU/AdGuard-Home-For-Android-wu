@@ -296,12 +296,13 @@ should_takeover_vpn_dns() {
         return 0
     fi
 
-    # 第二层：读取手机当前连接的物理蜂窝基站国家码（纯内存读取 getprop，毫秒级）
-    # 身处海外（非 cn / 非 460 基站）时本地无 GFW DNS 污染，无论开启 Clash/Sing-box 分流回国还是 Proton/Nord/WARP，
-    # 均保持 takeover 强制接管 VPN 53 端口，确保海外开启任何 VPN 时 AdGuardHome 广告过滤 100% 满血生效！
+    # 第二层：结合当前运行模式 (RUN_MODE) 与物理蜂窝基站国家码（纯内存读取 getprop，毫秒级）
+    # 海外模式 (RUN_MODE=overseas) 且未连接中国大陆基站（非 cn / 非 460）时，本地无 GFW DNS 污染，
+    # 无论开启 Clash/Sing-box 分流回国还是 Proton/Nord/WARP，均保持 takeover 强制接管 VPN 53 端口！
     op_country=$(getprop gsm.operator.iso-country 2>/dev/null | tr 'A-Z' 'a-z')
     op_mcc=$(getprop gsm.operator.numeric 2>/dev/null)
     in_mainland_cn=0
+    [ "${RUN_MODE:-overseas}" = "cn" ] && in_mainland_cn=1
     case "$op_country" in
         *cn*) in_mainland_cn=1 ;;
     esac

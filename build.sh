@@ -5,19 +5,12 @@ VERSION_DATE="${1:-20261111}"
 
 mkdir -p "$ROOT_DIR/releases"
 
-echo "Building Overseas Edition (海外版)..."
+echo "Building Unified Package (AdGuard_Home_gogogo_${VERSION_DATE}.zip)..."
 (
-  cd "$ROOT_DIR/overseas"
-  rm -f "$ROOT_DIR/releases/AdGuard_Home_gogogo_${VERSION_DATE}_Overseas.zip"
-  zip -q -r "$ROOT_DIR/releases/AdGuard_Home_gogogo_${VERSION_DATE}_Overseas.zip" . -x "*.DS_Store" -x "__MACOSX/*"
+  cd "$ROOT_DIR/module"
+  rm -f "$ROOT_DIR/releases/AdGuard_Home_gogogo_${VERSION_DATE}.zip"
+  zip -q -r "$ROOT_DIR/releases/AdGuard_Home_gogogo_${VERSION_DATE}.zip" . -x "*.DS_Store" -x "__MACOSX/*"
 )
 
-echo "Building China Edition (国内版)..."
-(
-  cd "$ROOT_DIR/cn"
-  rm -f "$ROOT_DIR/releases/AdGuard_Home_gogogo_${VERSION_DATE}_CN.zip"
-  zip -q -r "$ROOT_DIR/releases/AdGuard_Home_gogogo_${VERSION_DATE}_CN.zip" . -x "*.DS_Store" -x "__MACOSX/*"
-)
-
-echo "Done! Packages generated in $ROOT_DIR/releases/"
+echo "Done! Package generated in $ROOT_DIR/releases/"
 ls -lh "$ROOT_DIR/releases/"

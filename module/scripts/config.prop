@@ -13,3 +13,6 @@ PROXY_URL=""
 
 # VPN 下 DNS 接管策略 (auto: 默认推荐，零耗电本地自动识别“一键回国 VPN”与“翻墙出国 VPN”；1: 始终强制接管；0: 始终放行)
 VPN_DNS_TAKEOVER=auto
+
+# 运行模式预设 (overseas: 默认海外模式；cn: 国内模式)
+RUN_MODE=overseas

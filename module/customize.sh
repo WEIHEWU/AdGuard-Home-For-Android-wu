@@ -162,12 +162,17 @@ if [ -f "$BACKUP_DIR/config.prop" ]; then
         echo "PROXY_URL=\"$old_url\"" >> "$SCRIPT_DIR/config.prop"
         i18n_print "- Preserved PROXY_URL from backup" "- 已从备份恢复 PROXY_URL"
     fi
-    for key in ENABLE_SNI sni_ports VPN_DNS_TAKEOVER; do
+    for key in ENABLE_SNI sni_ports VPN_DNS_TAKEOVER RUN_MODE; do
         old_val=$(sed -n "s/^${key}=//p" "$BACKUP_DIR/config.prop" | head -n 1)
         if [ -n "$old_val" ]; then
             sed -i "s|^${key}=.*|${key}=${old_val}|" "$SCRIPT_DIR/config.prop" 2>/dev/null
         fi
     done
+fi
+active_mode=$(sed -n 's/^RUN_MODE=//p' "$SCRIPT_DIR/config.prop" | head -n 1)
+[ -z "$active_mode" ] && active_mode="overseas"
+if [ "$active_mode" = "cn" ]; then
+    sh "$SCRIPT_DIR/switch_mode.sh" cn --no-restart >/dev/null 2>&1
 fi
 sh "$SCRIPT_DIR/ProxyConfig.sh" --once >/dev/null 2>&1
 # 安装 AdGuard Home 管理器 APP 到手机主用户 (User 0)
