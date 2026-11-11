@@ -1,6 +1,6 @@
 id=AdGuardHome
-name=AdGuard Home gogogo
-version=20261111
-versionCode=2026111101
+name=AdGuard Home GoGoGo
+version=20261112
+versionCode=2026111200
 author=wu
 description=DNS及SNI层面过滤广告、防DNS劫持，开机时端口随机化，管理器页面点击操作按钮进入，不要私自更改内置规则和配置，账号和密码均为root

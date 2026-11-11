@@ -1,10 +1,12 @@
-# AdGuard-Home-gogogo
+# AdGuard-Home-GoGoGo
 
-**[📥 下载全能统一模块包 (AdGuard_Home_gogogo_20261111.zip)](https://github.com/WEIHEWU/AdGuard-Home-For-Android-wu/raw/main/releases/AdGuard_Home_gogogo_20261111.zip)** · **[📱 单独下载管理器 APK (com.wu.adgogogo)](https://github.com/WEIHEWU/AdGuard-Home-For-Android-wu/raw/main/releases/AdGuardHomeManager.apk)** · [Releases 页面](https://github.com/WEIHEWU/AdGuard-Home-For-Android-wu/releases)
+> **AdGuard-Home-GoGoGo - 面向 Android 的轻量级 AdGuard Home 模块，支持海外/国内双模一键切换与精准去广告**
 
-基于 Magisk / KernelSU / APatch 的 **AdGuard-Home-gogogo**（模块显示名称：`AdGuard Home gogogo`）全设备级 DNS 与内核 NFQUEUE SNI 去广告模块。专为追求**极致省电、零断流、局域网免检直通、临时 Root 软重启兼容、以及 VPN / 代理无缝协同**打造。
+**[📥 下载全能统一模块包 (AdGuard_Home_gogogo_20261111.zip)](https://github.com/WEIHEWU/AdGuard-Home-GoGoGo/raw/main/releases/AdGuard_Home_gogogo_20261111.zip)** · **[📱 单独下载管理器 APK (com.wu.adgogogo)](https://github.com/WEIHEWU/AdGuard-Home-GoGoGo/raw/main/releases/AdGuardHomeManager.apk)** · [Releases 页面](https://github.com/WEIHEWU/AdGuard-Home-GoGoGo/releases)
 
-配套管理器开源仓库：[AdGuard-Home-gogogo Manager](https://github.com/WEIHEWU/AdGuard-Home-Manager-wu)（包名：`com.wu.adgogogo`，已内置于模块刷机包中，刷入时自动安装）
+基于 Magisk / KernelSU / APatch 的 **AdGuard-Home-GoGoGo**（模块显示名称：`AdGuard Home GoGoGo`）全设备级 DNS 与内核 NFQUEUE SNI 去广告模块。专为追求**极致省电、零断流、局域网免检直通、临时 Root 软重启兼容、以及 VPN / 代理无缝协同**打造。
+
+配套管理器开源仓库：[AdGuard-Home-GoGoGo Manager](https://github.com/WEIHEWU/AdGuard-Home-GoGoGo-Manager)（桌面名称：`AdGuard Home GoGoGo`，快捷磁贴：`AGH GoGoGo`，包名：`com.wu.adgogogo`，已内置于模块刷机包中，刷入时自动安装）
 
 ---
 
@@ -13,7 +15,7 @@
 无需再区分下载两个不同的刷机包！本模块采用**单包统一发布**，内置 [`AdGuardHome_overseas.yaml`](module/bin/AdGuardHome_overseas.yaml) 与 [`AdGuardHome_cn.yaml`](module/bin/AdGuardHome_cn.yaml) 双预设模板及 [`switch_mode.sh`](module/scripts/switch_mode.sh) 热切换引擎：
 
 - **默认激活模式**：初次刷入默认激活 **🌐 海外模式 (`overseas`)**；
-- **App 内一键无损热切换**：打开配套管理器 `AdGuard-Home-gogogo Manager`，在 **「首页快捷栏」** 或 **「设置 -> DNS 设置」** 顶部点击分段开关即可随时在 **「🌐 海外模式 (Overseas)」** 与 **「🇨🇳 国内模式 (CN)」** 之间毫秒级切换；
+- **App 内一键无损热切换**：打开配套管理器 `AdGuard Home GoGoGo`，在 **「首页快捷栏」** 或 **「设置 -> DNS 设置」** 顶部点击分段开关即可随时在 **「🌐 海外模式 (Overseas)」** 与 **「🇨🇳 国内模式 (CN)」** 之间毫秒级切换；
 - **100% 保留个人数据**：切换模式时仅切换上游加密 DNS 节点、规则更新加速源与 VPN 伴生策略，**自动保留当前运行的动态端口、后台密码以及您添加的所有自定义规则 (`user_rules`)**，无需重启手机即时生效。
 
 | 对比维度 | 🌐 海外模式 (`overseas`，**默认激活**) | 🇨🇳 国内模式 (`cn`) |
@@ -31,7 +33,7 @@
    - 统一采用 `nsenter -G 23333 -t 1` 启动 `AdGuardHome` 核心（`v2026-11-07`），将核心流量（`uid=0, gid=23333`）与安卓系统 `netd`（`uid=0, gid=0`）在内核层彻底物理隔离；
    - 无论当前 Wi-Fi 或 VPN 的系统 DNS 是否与上游 IP（如 `1.1.1.1` / `8.8.8.8` / `223.5.5.5`）重合，均能 100% 拦截系统 DNS 请求且绝不发生核心自吞噬回环。
 2. **首包精准 SNI 嗅探 (`AGH_SNI`) + 局域网全协议免检直通 (`LAN Bypass`)**：
-   - 采用 `connbytes 1:8` 首包盘查 + 网卡 `rp_filter=2` 宽松反向路径校验，仅对每个新 TCP 连接的前 8 个握手包（兼容现代ハイブリッド后量子 TLS 分片 `ClientHello`）送入 NFQUEUE 嗅探，后续视频/下载承载流在内核层直接 `RETURN` 放行；
+   - 采用 `connbytes 1:8` 首包盘查 + 网卡 `rp_filter=2` 宽松反向路径校验，仅对每个新 TCP 连接的前 8 个握手包（兼容现代混合后量子 TLS 分片 `ClientHello`）送入 NFQUEUE 嗅探，后续视频/下载承载流在内核层直接 `RETURN` 放行；
    - 在 `AGH_SNI` 与 `ADGUARD_DOT` 顶层全协议豁免局域网私有网段（`127.0.0.0/8`, `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `169.254.0.0/16` 及 IPv6 `fc00::/7`, `fe80::/10`），完美访问局域网 NAS、投影仪、TVBox 及非标端口 HTTP 服务。
 3. **分应用白名单内核级直通 (`App Allowlist`)**：
    - 在配套管理器中勾选任意应用加入白名单后，[`iptables.sh`](module/scripts/iptables.sh) 直接在内核 `ADGUARD`、`ADGUARD6_NAT`、`ADGUARD_DOT`、`AGH_SNI` 四条链顶层通过 `-m owner --uid-owner` 精准放行该应用流量，零后台轮询、零发热且不影响其他应用的去广告保护。

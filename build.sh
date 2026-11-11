@@ -5,7 +5,7 @@ VERSION_DATE="${1:-20261111}"
 
 mkdir -p "$ROOT_DIR/releases"
 
-echo "Building Unified Package (AdGuard_Home_gogogo_${VERSION_DATE}.zip)..."
+echo "Building Unified Package (AdGuard-Home-GoGoGo -> AdGuard_Home_gogogo_${VERSION_DATE}.zip)..."
 (
   cd "$ROOT_DIR/module"
   rm -f "$ROOT_DIR/releases/AdGuard_Home_gogogo_${VERSION_DATE}.zip"

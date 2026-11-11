@@ -29,11 +29,13 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v20261111
-          name: "AdGuard-Home-gogogo 20261111"
+          name: "AdGuard-Home-GoGoGo 20261111"
           body: |
-            ### AdGuard-Home-gogogo `20261111` (全能统一单包版)
+            ### AdGuard-Home-GoGoGo `20261111` (全能统一单包版)
 
-            已将海外版与国内版合并为单一全能模块包 **`AdGuard_Home_gogogo_20261111.zip`**（**默认激活 🌐 海外模式**），并内置最新 **AdGuard-Home-gogogo Manager v2.24.14（包名：`com.wu.adgogogo`）**，支持在 App 内一键无损热切换「🌐 海外模式 (Overseas)」与「🇨🇳 国内模式 (CN)」。
+            **AdGuard-Home-GoGoGo - 面向 Android 的轻量级 AdGuard Home 模块，支持海外/国内双模一键切换与精准去广告**
+
+            已将海外版与国内版合并为单一全能模块包 **`AdGuard_Home_gogogo_20261111.zip`**（模块名称：`AdGuard Home GoGoGo`，**默认激活 🌐 海外模式**），并内置最新 **[AdGuard-Home-GoGoGo Manager v2.24.15](https://github.com/WEIHEWU/AdGuard-Home-GoGoGo-Manager)**（桌面名称：`AdGuard Home GoGoGo`，快捷磁贴：`AGH GoGoGo`，包名：`com.wu.adgogogo`），支持在 App 内一键无损热切换「🌐 海外模式 (Overseas)」与「🇨🇳 国内模式 (CN)」。
 
             #### 🆕 20261111 更新亮点
             - **海外 / 国内双模合一与 App 内一键热切换**：
