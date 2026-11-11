@@ -18,6 +18,13 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Remove obsolete split release assets if present
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release delete-asset v20261111 AdGuard_Home_gogogo_20261111_CN.zip --repo "$GITHUB_REPOSITORY" --yes 2>/dev/null || true
+          gh release delete-asset v20261111 AdGuard_Home_gogogo_20261111_Overseas.zip --repo "$GITHUB_REPOSITORY" --yes 2>/dev/null || true
+
       - name: Create GitHub Release and Upload Packages
         uses: softprops/action-gh-release@v2
         with:
@@ -32,9 +39,9 @@ jobs:
             - **海外 / 国内双模合一与 App 内一键热切换**：
               - 告别双包分别刷入，单包内置 `AdGuardHome_overseas.yaml`（默认激活）与 `AdGuardHome_cn.yaml` 双预设及 `switch_mode.sh` 热切换引擎；
               - 在管理器首页或 DNS 设置页点击即可毫秒级热切换上游加密 DNS、规则订阅源及 VPN 伴生策略，100% 保留个人自定义规则与动态端口。
-            - **核心与规则全面升级**：
-              - 升级最新 `AdGuardHome` 二进制核心（`v2026-11-07`）与最新规则集，统一采用 `nsenter -G 23333 -t 1` 进程组隔离启动，彻底根除回环自吞噬与冗余代码；
-              - 修复 `AdGuardHome.yaml` 行尾注释与 BusyBox `sed` 缩进吞噬导致的启动失败问题（Issue #2）。
+            - **取长补短的 5 大核心规则库（230,574 条不重复规则，1.2 秒极速启动）**：
+              - 完整启用 `GOODBYEADS` + `AdGuard DNS filter`（去重独有库）+ `AWAvenue 秋风规则` + `URLHaus` + `GOODBYEADS 白名单` 及 `1,615` 条精调自定义规则；
+              - 升级最新 `AdGuardHome` 二进制核心（`v2026-11-07`），统一采用 `nsenter -G 23333 -t 1` 进程组隔离启动，彻底根除回环自吞噬与 YAML 缩进损坏问题（Issue #2）。
           files: |
             releases/AdGuard_Home_gogogo_20261111.zip
             releases/AdGuardHomeManager.apk

@@ -1,55 +1,54 @@
 # AdGuard-Home-gogogo
 
-**[📥 下载全能统一模块包 (AdGuard_Home_gogogo_20261111.zip)](https://github.com/WEIHEWU/AdGuard-Home-For-Android-wu/raw/main/releases/AdGuard_Home_gogogo_20261111.zip)** · **[📱 单独下载管理器 APK](https://github.com/WEIHEWU/AdGuard-Home-For-Android-wu/raw/main/releases/AdGuardHomeManager.apk)** · [Releases 页面](https://github.com/WEIHEWU/AdGuard-Home-For-Android-wu/releases)
+**[📥 下载全能统一模块包 (AdGuard_Home_gogogo_20261111.zip)](https://github.com/WEIHEWU/AdGuard-Home-For-Android-wu/raw/main/releases/AdGuard_Home_gogogo_20261111.zip)** · **[📱 单独下载管理器 APK (com.wu.adgogogo)](https://github.com/WEIHEWU/AdGuard-Home-For-Android-wu/raw/main/releases/AdGuardHomeManager.apk)** · [Releases 页面](https://github.com/WEIHEWU/AdGuard-Home-For-Android-wu/releases)
 
-基于 Magisk / KernelSU / APatch 的 **AdGuard-Home-gogogo**（模块显示名称：`AdGuard Home gogogo`）全设备级 DNS 与内核 NFQUEUE SNI 去广告模块。专为追求**极致省电、零断流、临时 Root 软重启兼容、以及 VPN / 代理无缝协同**打造。
+基于 Magisk / KernelSU / APatch 的 **AdGuard-Home-gogogo**（模块显示名称：`AdGuard Home gogogo`）全设备级 DNS 与内核 NFQUEUE SNI 去广告模块。专为追求**极致省电、零断流、局域网免检直通、临时 Root 软重启兼容、以及 VPN / 代理无缝协同**打造。
 
-配套管理器开源仓库：[AdGuard-Home-gogogo Manager](https://github.com/WEIHEWU/AdGuard-Home-Manager-wu)（包名：`com.wu.adgogogo`）
+配套管理器开源仓库：[AdGuard-Home-gogogo Manager](https://github.com/WEIHEWU/AdGuard-Home-Manager-wu)（包名：`com.wu.adgogogo`，已内置于模块刷机包中，刷入时自动安装）
 
 ---
 
-## 🌐 海外模式 vs 🇨🇳 国内模式（单包合一 · App 内一键热切换）
+## 🌐 单包统一发布 · 内置「海外 / 国内」双模无损热切换
 
-本模块已将「海外版」与「国内版」合并为单一全能刷机包（**初次刷入默认激活 🌐 海外模式**），模块包内已内置 `AdGuard-Home-gogogo Manager`，刷入后可在 App **首页快捷栏** 或 **DNS 设置页** 随时一键无损热切换：
+无需再区分下载两个不同的刷机包！本模块采用**单包统一发布**，内置 [`AdGuardHome_overseas.yaml`](module/bin/AdGuardHome_overseas.yaml) 与 [`AdGuardHome_cn.yaml`](module/bin/AdGuardHome_cn.yaml) 双预设模板及 [`switch_mode.sh`](module/scripts/switch_mode.sh) 热切换引擎：
 
-| 对比维度 | 🌏 海外版 (`Overseas`) | 🇨🇳 中国国内版 (`CN`) |
+- **默认激活模式**：初次刷入默认激活 **🌐 海外模式 (`overseas`)**；
+- **App 内一键无损热切换**：打开配套管理器 `AdGuard-Home-gogogo Manager`，在 **「首页快捷栏」** 或 **「设置 -> DNS 设置」** 顶部点击分段开关即可随时在 **「🌐 海外模式 (Overseas)」** 与 **「🇨🇳 国内模式 (CN)」** 之间毫秒级切换；
+- **100% 保留个人数据**：切换模式时仅切换上游加密 DNS 节点、规则更新加速源与 VPN 伴生策略，**自动保留当前运行的动态端口、后台密码以及您添加的所有自定义规则 (`user_rules`)**，无需重启手机即时生效。
+
+| 对比维度 | 🌐 海外模式 (`overseas`，**默认激活**) | 🇨🇳 国内模式 (`cn`) |
 | :--- | :--- | :--- |
-| **适用人群** | 身处海外（澳洲/欧美/亚太等），物理网络可直连全球 | 身处中国大陆（纯国内直连，或配合 VPN / 订阅链接翻墙） |
-| **默认上游 DNS** | **Cloudflare / Google / Quad9 超低延迟 IP DoH** + 国内大厂域名分流回阿里/腾讯 DoH | **腾讯 DNSPod (`1.12.12.12` / `120.53.53.53`) DoH** + 阿里/腾讯 Bootstrap |
-| **规则订阅源** | GitHub 官方直连源 (`raw.githubusercontent.com`) | 国内免翻墙高速镜像 (`ghfast.top`) |
-| **独立 VPN App 模式** | ✅ 全自动零耗电识别（自动区分「一键回国 VPN」与「翻墙出国 VPN」） | ✅ 全自动零耗电识别（自动区分「翻墙出国 VPN」与「一键回国 VPN」） |
-| **App 填订阅链接模式** | ✅ 支持（填入 `PROXY_URL` 自动激活） | ✅ 支持（填入 `PROXY_URL` 自动激活对接 Box/Clash） |
+| **适用场景** | 身处海外（澳洲/欧美/亚太等），物理网络可直连全球 | 身处中国大陆（纯国内直连，或配合 VPN / 订阅链接翻墙） |
+| **默认上游 DNS** | **Cloudflare / Google / Quad9 超低延迟 DoH** + 境内政务/高校域名 (`gov.cn`/`edu.cn`/`12306.cn`) 分流回阿里/腾讯 DoH | **阿里 (`223.5.5.5`) + 腾讯 DNSPod (`1.12.12.12`) DoH** 并行请求 |
+| **规则订阅源地址** | GitHub 官方直连源 (`raw.githubusercontent.com`) | 国内免翻墙高速镜像 (`ghfast.top`) |
+| **VPN 伴生策略** | 自动识别海外环境并保持 `takeover` 接管 VPN 53 端口满血去广告 | 自动识别翻墙防污染 VPN (`Clash`/`Sing-box`/Fake-IP) 并切换 `bypass` 防污染 |
 
 ---
 
-## ✨ 核心优化亮点
+## ✨ 核心架构与优化亮点
 
-1. **V2 零内存分配 SNI 深度嗅探引擎 (`AGH_SNI`) + 公共 DNS / DoT 防绕过 (`ADGUARD_DOT`)**：
-   - 集成上游最新 SolidJS V2 WebUI 与零分配原地解析 `internal/snifilter` 引擎；
-   - 采用 `connbytes 1:3` 首包精准盘查机制：仅对每个新 TCP 连接的前 3 个握手包（含 TLS `ClientHello`）送入 NFQUEUE 嗅探，彻底掐死国内 App 的 HTTPDNS / IP 直连开屏广告；握手完成后后续成千上万个视频/下载数据包在内核层直接 `RETURN` 放行，零队列延迟、零发热；
-   - 动态解析上游 DNS 地址并仅豁免 `uid 0`（AdGuardHome 自身），彻底拦截普通 App 硬编码公共 DNS 或私自使用 `853/784/8853` 加密端口绕过过滤的行为。
-2. **双模代理自适应（通吃“独立 VPN App”与“填订阅链接”）**：
-   - **用法 A（使用独立 VPN App）**：无需任何额外设置（保持管理 App 内的 `PROXY_URL` 留空）。模块绝不触碰外部代理配置，自动放行 Fake-IP (`198.18.0.0/15`) 与 Sing-box/Clash TUN (`172.19.0.0/16`)，并通过 `O(1)` 级 `/sys/class/net/tun*` 状态感知 + **6 秒防抖确认**，在开关 VPN 时自动切换乐观缓存并冲洗旧 DNS 缓存。
-   - **用法 B（使用 Box / Clash / Mihomo 模块 + 填订阅链接）**：在 `AdGuard Home Manager` 的【设置 -> 模块设置 -> `PROXY_URL 订阅链接`】中填入机场订阅并保存，[`ProxyConfig.sh`](cn/scripts/ProxyConfig.sh) 立即自动将订阅地址与每次开机随机生成的最新 `127.0.0.1:${redir_port}` 端口注入代理配置并温和刷新服务（已移除原版粗暴开关飞行模式导致的断网问题）。
-3. **临时 Root 与软重启（Soft Reboot）加固 + 动态 CA 证书包聚合**：
-   - 针对三星 S24 Ultra 等锁 BL 临时 Root 环境深度适配；
-   - [`service.sh`](overseas/service.sh) 内置 3 次启动重试安全熔断（防卡米死循环）、`/proc/$pid/comm` 进程名二次校验，以及开机自动聚合系统与用户 CA 证书包 (`cacerts.pem`)。
-4. **极致省电与闪存保护（做减法）**：
-   - 查询日志改为纯内存环状队列（`file_enabled: false`, `size_memory: 1000`），App 内实时查看拦截日志不受影响，同时彻底消灭后台高频写盘耗电与闪存磨损；
-   - 关闭移动端无意义的 `whois` / `arp` / `hosts` 客户端反向扫描与本地 `dnssec` 校验开销；
-   - 守护周期放宽至 60 秒，`O(1)` 级存活探测，绝不阻断手机进入 Deep Sleep（深度休眠）。
-5. **去广告不误杀 + 管理器一键维护套件**：
-   - 预置 `GOODBYEADS` + `AWAvenue (秋风广告规则)` + `AdGuard DNS Filter`；
-   - 内置完善的 Google 全家桶、Google Wallet / Pay 银行卡验证、FCM 推送及国内主流 App（微信、支付宝、淘宝、京东、B站、抖音、小红书等）防误杀白名单；
-   - 配套管理器点击查询日志一键放行/拦截自动追加 `$important` 最高优先级修饰符，并内置**模块运行状态自检与日志查看器**、**一键清理开屏广告缓存**、**智能补全/重置出厂默认规则**等维护工具。
+1. **`nsenter -G 23333` 专属进程组隔离 + 零自吞噬防回环**：
+   - 统一采用 `nsenter -G 23333 -t 1` 启动 `AdGuardHome` 核心（`v2026-11-07`），将核心流量（`uid=0, gid=23333`）与安卓系统 `netd`（`uid=0, gid=0`）在内核层彻底物理隔离；
+   - 无论当前 Wi-Fi 或 VPN 的系统 DNS 是否与上游 IP（如 `1.1.1.1` / `8.8.8.8` / `223.5.5.5`）重合，均能 100% 拦截系统 DNS 请求且绝不发生核心自吞噬回环。
+2. **首包精准 SNI 嗅探 (`AGH_SNI`) + 局域网全协议免检直通 (`LAN Bypass`)**：
+   - 采用 `connbytes 1:8` 首包盘查 + 网卡 `rp_filter=2` 宽松反向路径校验，仅对每个新 TCP 连接的前 8 个握手包（兼容现代ハイブリッド后量子 TLS 分片 `ClientHello`）送入 NFQUEUE 嗅探，后续视频/下载承载流在内核层直接 `RETURN` 放行；
+   - 在 `AGH_SNI` 与 `ADGUARD_DOT` 顶层全协议豁免局域网私有网段（`127.0.0.0/8`, `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `169.254.0.0/16` 及 IPv6 `fc00::/7`, `fe80::/10`），完美访问局域网 NAS、投影仪、TVBox 及非标端口 HTTP 服务。
+3. **分应用白名单内核级直通 (`App Allowlist`)**：
+   - 在配套管理器中勾选任意应用加入白名单后，[`iptables.sh`](module/scripts/iptables.sh) 直接在内核 `ADGUARD`、`ADGUARD6_NAT`、`ADGUARD_DOT`、`AGH_SNI` 四条链顶层通过 `-m owner --uid-owner` 精准放行该应用流量，零后台轮询、零发热且不影响其他应用的去广告保护。
+4. **双模代理自适应（通吃“独立 VPN App”与“填订阅链接”）**：
+   - **用法 A（使用独立 VPN App）**：保持管理 App 内的 `PROXY_URL` 留空即可，模块自动感知 `/sys/class/net/tun*` 状态并配合 `ndc` 无感刷新 DNS 缓存；
+   - **用法 B（使用 Box / Clash / Mihomo 模块 + 填订阅链接）**：在管理器的【设置 -> 模块设置 -> `PROXY_URL 订阅链接`】中填入机场订阅并保存，[`ProxyConfig.sh`](module/scripts/ProxyConfig.sh) 自动将订阅地址与最新本地 DNS 端口同步至代理配置。
+5. **取长补短的精炼规则体系（`230,574` 条不重复有效规则，1.2 秒极速启动）**：
+   - 完整启用 5 大核心规则源：**GOODBYEADS 主规则** (`122,005` 条) + **AdGuard DNS filter 去重独有库** (`89,293` 条) + **URLHaus 恶意域名库** (`1,832` 条) + **AWAvenue 秋风规则** (`966` 条) + **GOODBYEADS 白名单** (`14,863` 条)；
+   - 内置 `1,615` 条精调自定义规则（涵盖 Google 全家桶/Wallet/FCM 推送、局域网公共静态资源、国内主流 App 防误杀白名单及 12 大类隐私与防挖矿增强规则）。
 
 ---
 
 ## 🛠️ 目录结构与构建
 
 ```text
-├── module/          # 全能统一模块完整源码（含 overseas / cn 双预设与热切换脚本）
-├── releases/        # 打包好的模块 zip 与配套管理器 APK
+├── module/          # 全能统一模块完整源码（含 overseas / cn 双预设模板与 switch_mode.sh 热切换脚本）
+├── releases/        # 打包好的统一模块 zip 与配套管理器 APK
 └── build.sh         # 一键构建统一模块包脚本
 ```
 
