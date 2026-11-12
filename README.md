@@ -2,9 +2,9 @@
 
 > **AdGuard-Home-GoGoGo - 面向 Android 的轻量级 AdGuard Home 模块，支持海外/国内双模一键切换与精准去广告**
 
-**[📥 下载全能统一模块包 (AdGuard_Home_gogogo_20261111.zip)](https://github.com/WEIHEWU/AdGuard-Home-GoGoGo/raw/main/releases/AdGuard_Home_gogogo_20261111.zip)** · **[📱 单独下载管理器 APK (com.wu.adgogogo)](https://github.com/WEIHEWU/AdGuard-Home-GoGoGo/raw/main/releases/AdGuardHomeManager.apk)** · [Releases 页面](https://github.com/WEIHEWU/AdGuard-Home-GoGoGo/releases)
+**[📥 下载全能统一模块包 (AdGuard_Home_gogogo_20261112.zip)](https://github.com/WEIHEWU/AdGuard-Home-GoGoGo/releases/download/v20261112/AdGuard_Home_gogogo_20261112.zip)** · **[📱 单独下载管理器 APK (com.wu.adgogogo)](https://github.com/WEIHEWU/AdGuard-Home-GoGoGo/releases/download/v20261112/AdGuardHomeManager.apk)** · [Releases 页面](https://github.com/WEIHEWU/AdGuard-Home-GoGoGo/releases/latest)
 
-基于 Magisk / KernelSU / APatch 的 **AdGuard-Home-GoGoGo**（模块显示名称：`AdGuard Home GoGoGo`）全设备级 DNS 与内核 NFQUEUE SNI 去广告模块。专为追求**极致省电、零断流、局域网免检直通、临时 Root 软重启兼容、以及 VPN / 代理无缝协同**打造。
+基于 Magisk / KernelSU / APatch 的 **AdGuard-Home-GoGoGo**（模块显示名称：`AdGuard Home GoGoGo`）全设备级纯 DNS 去广告防火墙模块。内置专属深度瘦身核心 **[AdGuard-Home-GoGoGo-Core](https://github.com/WEIHEWU/AdGuard-Home-GoGoGo-Core)**（`11.44 MiB` 纯静态 `ARMv8.2` LSE 加速、100% 零后台磁盘写 I/O），专为追求**极致省电、零断流、局域网免检直通、临时 Root 软重启兼容、以及 VPN / 代理无缝协同**打造。
 
 配套管理器开源仓库：[AdGuard-Home-GoGoGo Manager](https://github.com/WEIHEWU/AdGuard-Home-GoGoGo-Manager)（桌面名称：`AdGuard Home GoGoGo`，快捷磁贴：`AGH GoGoGo`，包名：`com.wu.adgogogo`，已内置于模块刷机包中，刷入时自动安装）
 
@@ -58,7 +58,7 @@
 
 ```bash
 chmod +x build.sh
-./build.sh 20261111
+./build.sh 20261112
 ```
 
 ## 维护与开源
