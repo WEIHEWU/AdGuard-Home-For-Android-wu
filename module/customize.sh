@@ -64,10 +64,11 @@ if [ -d "$SCRIPT_DIR" ]; then
     find "$AGH_DIR/scripts" "$ADGPATH" -type f -name "*.sh" -exec chattr -i {} \; 2>/dev/null
 fi
 
-# 清除旧模块残留
+# 清除旧模块残留与历史持久化数据库文件（新版采用 100% 纯内存环形统计与会话，零后台磁盘写 I/O）
 if [ -d "$AGH_DIR/ifw" ] || [ -d "$AGH_DIR/scripts" ] || [ -d "$BIN_DIR/agh_pid" ] || [ -d "$BIN_DIR/data/filters" ]; then
   i18n_print "- Cleaning up old module residues" "- 正在清理旧模块残留"
   rm -rf "$AGH_DIR/ifw" "$AGH_DIR/scripts" "$BIN_DIR/agh_pid" "$BIN_DIR/data/filters" "$AGH_DIR/datachart"* "$AGH_DIR/app_pause_active"
+  rm -f "$BIN_DIR/data/stats.db"* "$BIN_DIR/data/sessions.db"* "$BIN_DIR/data/querylog.json"* 2>/dev/null
 fi
 
 # 创建目录并解压文件
@@ -162,7 +163,7 @@ if [ -f "$BACKUP_DIR/config.prop" ]; then
         echo "PROXY_URL=\"$old_url\"" >> "$SCRIPT_DIR/config.prop"
         i18n_print "- Preserved PROXY_URL from backup" "- 已从备份恢复 PROXY_URL"
     fi
-    for key in ENABLE_SNI sni_ports VPN_DNS_TAKEOVER RUN_MODE; do
+    for key in sni_ports VPN_DNS_TAKEOVER RUN_MODE; do
         old_val=$(sed -n "s/^${key}=//p" "$BACKUP_DIR/config.prop" | head -n 1)
         if [ -n "$old_val" ]; then
             sed -i "s|^${key}=.*|${key}=${old_val}|" "$SCRIPT_DIR/config.prop" 2>/dev/null

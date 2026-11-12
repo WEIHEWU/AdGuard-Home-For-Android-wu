@@ -112,10 +112,12 @@ pidof AdGuardHome >/dev/null 2>&1 && killall -9 AdGuardHome 2>/dev/null
 
 AGH_TZ="$(getprop persist.sys.timezone 2>/dev/null)"
 [ -n "$AGH_TZ" ] && export TZ="$AGH_TZ"
+export GOGC=50
+export GOMEMLIMIT=64MiB
 export SSL_CERT_DIR="/system/etc/security/cacerts/"
 [ -s "$CA_BUNDLE" ] && export SSL_CERT_FILE="$CA_BUNDLE"
 
-nsenter -G $AGH_GID -t 1 "$BIN_DIR/AdGuardHome" --no-check-update --crash-log "$AGH_DIR/crash.log" --logfile discard >/dev/null 2>&1 &
+nsenter -G $AGH_GID -t 1 "$BIN_DIR/AdGuardHome" --no-check-update --no-etc-hosts --crash-log "$AGH_DIR/crash.log" --logfile discard >/dev/null 2>&1 &
 echo "$!" > "$BIN_DIR/AdGuardHome.pid"
 sleep 1
 agh_real_pid=$(pidof AdGuardHome 2>/dev/null | awk '{print $1}')

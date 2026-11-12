@@ -21,7 +21,7 @@ export PATH="/data/adb/ksu/bin:/data/adb/ap/bin:/data/adb/magisk:$PATH"
 
 [ -f "$AGH_DIR/scripts/config.prop" ] && . "$AGH_DIR/scripts/config.prop"
 redir_port=${redir_port:-31587}
-ENABLE_SNI=${ENABLE_SNI:-1}
+ENABLE_SNI=${ENABLE_SNI:-0}
 VPN_DNS_TAKEOVER=${VPN_DNS_TAKEOVER:-auto}
 
 # 1. 防止重复启动后台守护自身（允许 --reload / --apply-allowlist 单次极速热重载；若软重启重新触发本脚本，先重载规则再退出）
@@ -56,15 +56,19 @@ start_agh() {
             *)   echo "$(date '+%F %T') [INFO] Starting AdGuardHome with dedicated group (uid=0, gid=$AGH_GID)..." ;;
         esac
     } >> "$MAIN_LOG"
-    echo 0 > /proc/sys/net/ipv4/tcp_fastopen 2>/dev/null
-    for rpf in /proc/sys/net/ipv4/conf/*/rp_filter; do
-        [ -w "$rpf" ] && echo 2 > "$rpf" 2>/dev/null
-    done
+    if [ "${ENABLE_SNI:-0}" = "1" ]; then
+        echo 0 > /proc/sys/net/ipv4/tcp_fastopen 2>/dev/null
+        for rpf in /proc/sys/net/ipv4/conf/*/rp_filter; do
+            [ -w "$rpf" ] && echo 2 > "$rpf" 2>/dev/null
+        done
+    fi
     AGH_TZ="$(getprop persist.sys.timezone 2>/dev/null)"
     [ -n "$AGH_TZ" ] && export TZ="$AGH_TZ"
+    export GOGC=50
+    export GOMEMLIMIT=64MiB
     export SSL_CERT_DIR="/system/etc/security/cacerts/"
     [ -s "$BIN_DIR/cacerts.pem" ] && export SSL_CERT_FILE="$BIN_DIR/cacerts.pem"
-    nsenter -G $AGH_GID -t 1 "$BIN_DIR/AdGuardHome" --no-check-update --crash-log "$AGH_DIR/crash.log" --logfile discard >/dev/null 2>&1 &
+    nsenter -G $AGH_GID -t 1 "$BIN_DIR/AdGuardHome" --no-check-update --no-etc-hosts --crash-log "$AGH_DIR/crash.log" --logfile discard >/dev/null 2>&1 &
     echo "$!" > "$PID_FILE"
 }
 
@@ -619,7 +623,7 @@ while true; do
         # 检查 OUTPUT 挂载点、ADGUARD 重定向规则及 AGH_SNI 规则是否被系统 netd 冲掉，若是则自动修复
         if ! iptables -w 2 -t nat -C OUTPUT -j ADGUARD 2>/dev/null || \
            ! iptables -w 2 -t nat -C ADGUARD -p udp --dport 53 -j REDIRECT --to-ports "$redir_port" 2>/dev/null || \
-           { [ "${ENABLE_SNI:-1}" != "0" ] && ! iptables -w 2 -t filter -C AGH_SNI -o lo -j RETURN 2>/dev/null; }; then
+           { [ "${ENABLE_SNI:-0}" != "0" ] && ! iptables -w 2 -t filter -C AGH_SNI -o lo -j RETURN 2>/dev/null; }; then
             apply_rules
         fi
     fi

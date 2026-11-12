@@ -2,8 +2,8 @@
 # AdGuardHome DNS 重定向端口
 redir_port=31587
 
-# SNI 深度嗅探防 HTTPDNS 绕过 (1: 开启极致防绕过与首包快通, 0: 纯DNS轻量模式)
-ENABLE_SNI=1
+# SNI 深度嗅探防 HTTPDNS 绕过 (0: 默认纯 DNS 轻量防火墙模式，零代理冲突；1: 开启 NFQUEUE 首包嗅探需配合 sni 版核心)
+ENABLE_SNI=0
 
 # SNI 队列端口
 sni_ports="443,8443"

@@ -103,18 +103,22 @@ if ! agh_running; then
         sed -i "/^dns:/,/^[^[:space:]]/ s/^\([[:space:]]*port:\) [0-9]*/\1 $R1/; s/^\([[:space:]]*address:\) 127\.0\.0\.1:[0-9]*/\1 127.0.0.1:$R2/" "$BIN_DIR/AdGuardHome.yaml"
         sed -i "s/^redir_port=.*/redir_port=$R1/" "$SCRIPT_DIR/config.prop"
 
-        # 关闭 TCP Fast Open 防止 TLS ClientHello 夹带在 SYN 包中绕过 NFQUEUE，并将网卡 rp_filter 设为宽松模式 (2)
-        echo 0 > /proc/sys/net/ipv4/tcp_fastopen 2>/dev/null
-        for rpf in /proc/sys/net/ipv4/conf/*/rp_filter; do
-            [ -w "$rpf" ] && echo 2 > "$rpf" 2>/dev/null
-        done
+        # 仅在显式开启 ENABLE_SNI=1 时调整 tcp_fastopen 与 rp_filter；默认纯 DNS 防火墙模式完全保持原生内核 TCP 协议栈参数
+        if grep -q '^ENABLE_SNI=1' "$SCRIPT_DIR/config.prop" 2>/dev/null; then
+            echo 0 > /proc/sys/net/ipv4/tcp_fastopen 2>/dev/null
+            for rpf in /proc/sys/net/ipv4/conf/*/rp_filter; do
+                [ -w "$rpf" ] && echo 2 > "$rpf" 2>/dev/null
+            done
+        fi
 
         # 启动AdGuardHome（统一使用 nsenter 绑定专属 GID 23333，与系统 netd [uid=0,gid=0] 彻底物理隔离）
         AGH_TZ="$(getprop persist.sys.timezone 2>/dev/null)"
         [ -n "$AGH_TZ" ] && export TZ="$AGH_TZ"
+        export GOGC=50
+        export GOMEMLIMIT=64MiB
         export SSL_CERT_DIR="/system/etc/security/cacerts/"
         [ -s "$CA_BUNDLE" ] && export SSL_CERT_FILE="$CA_BUNDLE"
-        nsenter -G $AGH_GID -t 1 "$BIN_DIR/AdGuardHome" --no-check-update --crash-log "$AGH_DIR/crash.log" --logfile discard >/dev/null 2>&1 &
+        nsenter -G $AGH_GID -t 1 "$BIN_DIR/AdGuardHome" --no-check-update --no-etc-hosts --crash-log "$AGH_DIR/crash.log" --logfile discard >/dev/null 2>&1 &
         echo "$!" > "$BIN_DIR/AdGuardHome.pid"
 
         sleep 2
