@@ -1,6 +1,6 @@
 # 注：以下修改后必须重启生效
 # AdGuardHome DNS 重定向端口
-redir_port=31587
+redir_port=59156
 
 # SNI 深度嗅探防 HTTPDNS 绕过 (0: 默认纯 DNS 轻量防火墙模式，零代理冲突；1: 开启 NFQUEUE 首包嗅探需配合 sni 版核心)
 ENABLE_SNI=0

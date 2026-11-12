@@ -12,54 +12,55 @@
 # 屏蔽软重启 (Soft Reboot) 期间父进程派发的 SIGHUP 信号，确保临时 Root 下后台守护与核心不掉线
 trap '' HUP
 
-AGH_DIR="/data/adb/agh"
+SH_BIN="/system/bin/sh"
+[ -x "$SH_BIN" ] || SH_BIN="/bin/sh"
+
+AGH_DIR="${AGH_DIR:-/data/adb/agh}"
+MODDIR="${MODDIR:-/data/adb/modules/AdGuardHome}"
 BIN_DIR="$AGH_DIR/bin"
 MAIN_LOG="$AGH_DIR/agh.log"
 PID_FILE="$BIN_DIR/AdGuardHome.pid"
 AGH_GID=23333
 export PATH="/data/adb/ksu/bin:/data/adb/ap/bin:/data/adb/magisk:$PATH"
 
+for bb in /data/adb/ksu/bin/busybox /data/adb/ap/bin/busybox /data/adb/magisk/busybox /debug_ramdisk/.magisk/busybox/busybox /sbin/.magisk/busybox/busybox; do
+    if [ -x "$bb" ]; then
+        command -v awk >/dev/null 2>&1 || awk() { "$bb" awk "$@"; }
+        command -v pidof >/dev/null 2>&1 || pidof() { "$bb" pidof "$@"; }
+        command -v killall >/dev/null 2>&1 || killall() { "$bb" killall "$@"; }
+        break
+    fi
+done
+
 [ -f "$AGH_DIR/scripts/config.prop" ] && . "$AGH_DIR/scripts/config.prop"
 redir_port=${redir_port:-55453}
 ENABLE_SNI=${ENABLE_SNI:-0}
 VPN_DNS_TAKEOVER=${VPN_DNS_TAKEOVER:-auto}
 
-# 2. 高效检测 AdGuardHome 是否存活 (O(1) 单次内核调用，校验进程名防 PID 复用误判)
+# 2. 高效检测 AdGuardHome 是否存活与本地 UDP DNS 端口是否真实监听
 agh_running() {
     if [ -f "$PID_FILE" ]; then
         agh_pid=$(cat "$PID_FILE" 2>/dev/null)
         if [ -n "$agh_pid" ] && kill -0 "$agh_pid" 2>/dev/null; then
-            if [ "$(cat /proc/$agh_pid/comm 2>/dev/null)" = "AdGuardHome" ]; then
+            if [ "$(cat "/proc/$agh_pid/comm" 2>/dev/null)" = "AdGuardHome" ]; then
                 return 0
             fi
-            rm -f "$PID_FILE"
+            rm -f "$PID_FILE" 2>/dev/null
         fi
     fi
     pidof AdGuardHome >/dev/null 2>&1
 }
 
-# 3. 启动 AdGuardHome（统一使用 nsenter 绑定专属 GID 23333，保持完整 Root 权限同时与系统 netd [uid=0,gid=0] 彻底物理隔离）
-start_agh() {
-    {
-        case "$(getprop persist.sys.locale 2>/dev/null)" in
-            zh*) echo "$(date '+%F %T') [INFO] 正在以专属用户组 (uid=0, gid=$AGH_GID) 启动 AdGuardHome..." ;;
-            *)   echo "$(date '+%F %T') [INFO] Starting AdGuardHome with dedicated group (uid=0, gid=$AGH_GID)..." ;;
-        esac
-    } >> "$MAIN_LOG"
-    if [ "${ENABLE_SNI:-0}" = "1" ]; then
-        echo 0 > /proc/sys/net/ipv4/tcp_fastopen 2>/dev/null
-        for rpf in /proc/sys/net/ipv4/conf/*/rp_filter; do
-            [ -w "$rpf" ] && echo 2 > "$rpf" 2>/dev/null
-        done
-    fi
-    AGH_TZ="$(getprop persist.sys.timezone 2>/dev/null)"
-    [ -n "$AGH_TZ" ] && export TZ="$AGH_TZ"
-    export GOGC=50
-    export GOMEMLIMIT=64MiB
-    export SSL_CERT_DIR="/system/etc/security/cacerts/"
-    [ -s "$BIN_DIR/cacerts.pem" ] && export SSL_CERT_FILE="$BIN_DIR/cacerts.pem"
-    nsenter -G $AGH_GID -t 1 "$BIN_DIR/AdGuardHome" --no-check-update --no-etc-hosts --crash-log "$AGH_DIR/crash.log" --logfile discard >/dev/null 2>&1 &
-    echo "$!" > "$PID_FILE"
+udp_port_listening() {
+    p_hex=$(printf '%04X' "$1" 2>/dev/null)
+    [ -n "$p_hex" ] || return 1
+    for f in /proc/net/udp /proc/net/udp6; do
+        [ -r "$f" ] || continue
+        if grep -qiE "^[[:space:]]*[0-9]+:[[:space:]]+[0-9A-Fa-f]+:${p_hex}[[:space:]]" "$f" 2>/dev/null; then
+            return 0
+        fi
+    done
+    return 1
 }
 
 # 4. 清理旧版本及冲突规则 (彻底杜绝粗暴封禁443/853导致VPN无法连接的问题)
@@ -488,24 +489,25 @@ refresh_network() {
     ndc resolver flushenv 2>/dev/null
 }
 
-# 10. 开机单次启动健康预检 (Pre-flight Check，等待过滤规则加载与端口就绪后再挂载规则)
+# 10. 挂载前健康预检 (Pre-flight Check：严禁在此直接拉起核心；若核心未存活或端口未监听，立即执行防断网安全阀卸规则！)
 preflight_check() {
-    agh_running || start_agh
-    port_hex=$(printf '%04X' "$redir_port")
-    for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
-        if grep -qi ":$port_hex " /proc/net/udp /proc/net/udp6 2>/dev/null; then
+    [ -f "$AGH_DIR/scripts/config.prop" ] && . "$AGH_DIR/scripts/config.prop"
+    redir_port=${redir_port:-55453}
+    for i in 1 2 3 4 5 6 7 8 9 10; do
+        if agh_running && udp_port_listening "$redir_port"; then
             agh_real_pid=$(pidof AdGuardHome 2>/dev/null | awk '{print $1}')
-            [ -n "$agh_real_pid" ] && echo "$agh_real_pid" > "$PID_FILE"
-            echo "$(date '+%F %T') [PRE-FLIGHT] 本地 DNS 端口 ($redir_port) 就绪，执行规则接管。" >> "$MAIN_LOG"
+            [ -n "$agh_real_pid" ] && echo "$agh_real_pid" > "$PID_FILE" 2>/dev/null
+            echo "$(date '+%F %T') [PRE-FLIGHT] 本地 DNS 端口 ($redir_port) 就绪，执行规则接管。" >> "$MAIN_LOG" 2>/dev/null
             return 0
         fi
-        sleep 1
+        sleep 0.2 2>/dev/null || sleep 1
     done
-    echo "$(date '+%F %T') [WARNING] 本地 DNS 端口 ($redir_port) 超时未就绪，安全中止 iptables 劫持以防断网！" >> "$MAIN_LOG"
+    clean_all_rules
+    echo "$(date '+%F %T') [WARNING] AdGuardHome 未存活或端口 ($redir_port) 未监听，已触发防断网安全阀卸载 NAT 规则！" >> "$MAIN_LOG" 2>/dev/null
     return 1
 }
 
-# 11. 幂等命令行子指令分发（统一由 service.sh 单例守护负责 30 秒低功耗巡检，本脚本执行完毕立即退出）
+# 11. 幂等命令行子指令分发（统一由 service.sh 负责根命名空间核心生命周期与 30 秒低功耗巡检）
 case "${1:-}" in
     clean|--clean)
         clean_legacy_conflicts
@@ -517,21 +519,30 @@ case "${1:-}" in
         : > /dev/shm/agh_manual_stop 2>/dev/null || { mkdir -p "$AGH_DIR/run" 2>/dev/null; : > "$AGH_DIR/run/agh_manual_stop" 2>/dev/null; }
         clean_legacy_conflicts
         clean_all_rules
-        killall -15 AdGuardHome 2>/dev/null
-        sleep 1
-        pidof AdGuardHome >/dev/null 2>&1 && killall -9 AdGuardHome 2>/dev/null
+        if pidof AdGuardHome >/dev/null 2>&1; then
+            killall -15 AdGuardHome 2>/dev/null
+            sleep 1
+            pidof AdGuardHome >/dev/null 2>&1 && killall -9 AdGuardHome 2>/dev/null
+        fi
         rm -f "$PID_FILE" 2>/dev/null
         refresh_network
         exit 0
         ;;
     --reload|--apply-allowlist)
-        if agh_running; then
+        rm -f /dev/shm/agh_manual_stop "$AGH_DIR/run/agh_manual_stop" \
+              "$AGH_DIR/manual_stop" "$AGH_DIR/stopped" "$AGH_DIR/app_pause_active" 2>/dev/null
+        [ -f "$AGH_DIR/scripts/config.prop" ] && . "$AGH_DIR/scripts/config.prop"
+        redir_port=${redir_port:-55453}
+        if agh_running && udp_port_listening "$redir_port"; then
             clean_legacy_conflicts
             clean_hotspot_rules
             apply_rules
             refresh_network
+            exit 0
         fi
-        exit 0
+        # 防断网安全阀：核心未运行或端口未监听时立即卸下规则，绝不挂载死端口
+        clean_all_rules
+        exit 1
         ;;
     enable|--enable)
         clean_legacy_conflicts
@@ -541,20 +552,17 @@ case "${1:-}" in
             refresh_network
             exit 0
         fi
+        clean_all_rules
         exit 1
         ;;
     *)
-        # 兼容管理器 App 无参调用 (reloadFirewallRules)：自动解除手动停止标记，确保核心与单例守护就绪并重挂规则
-        rm -f /dev/shm/agh_manual_stop "$AGH_DIR/run/agh_manual_stop" "$AGH_DIR/manual_stop" "$AGH_DIR/stopped" "$AGH_DIR/app_pause_active" 2>/dev/null
-        clean_legacy_conflicts
-        clean_hotspot_rules
-        if preflight_check; then
-            apply_rules
-            refresh_network
+        # 兼容无参调用与一键修复：清理所有停止锁，100% 统一委托 service.sh --repair 在根命名空间完成自愈与规则挂载
+        rm -f /dev/shm/agh_manual_stop "$AGH_DIR/run/agh_manual_stop" \
+              "$AGH_DIR/manual_stop" "$AGH_DIR/stopped" "$AGH_DIR/app_pause_active" 2>/dev/null
+        if [ -f "$MODDIR/service.sh" ]; then
+            exec "$SH_BIN" "$MODDIR/service.sh" --repair
         fi
-        if [ -f "/data/adb/modules/AdGuardHome/service.sh" ]; then
-            /system/bin/sh "/data/adb/modules/AdGuardHome/service.sh" start >/dev/null 2>&1 &
-        fi
-        exit 0
+        clean_all_rules
+        exit 1
         ;;
 esac

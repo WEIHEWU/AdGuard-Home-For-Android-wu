@@ -123,7 +123,7 @@ if [ -f "$BACKUP_DIR/AdGuardHome.yaml" ] && [ -f "$BIN_DIR/AdGuardHome.yaml" ]; 
         sed -i "s|^\([[:space:]]*password:[[:space:]]*\).*|\1$escaped_pwd|" "$BIN_DIR/AdGuardHome.yaml" 2>/dev/null
     fi
     # 2. 提取用户在旧版中自行添加的自定义规则，使用 awk 严格按 2 空格缩进合并至新版配置 ^filtering: 之前（彻底杜绝 BusyBox sed i\ 吞空格导致 YAML 损坏）
-    awk '
+    awk -v sq="'" '
         FILENAME == ARGV[1] {
             gsub(/\r$/, "")
             if ($0 != "") known[$0] = 1
@@ -135,9 +135,14 @@ if [ -f "$BACKUP_DIR/AdGuardHome.yaml" ] && [ -f "$BIN_DIR/AdGuardHome.yaml" ]; 
             if (in_old && /^[[:space:]]*-[[:space:]]*/) {
                 rule = $0
                 sub(/^[[:space:]]*-[[:space:]]*/, "", rule)
-                sub(/\x27[[:space:]]*#.*$/, "\x27", rule)
-                gsub(/^'\''|'\''$|^"|"$|[[:space:]]+$/, "", rule)
-                gsub(/\x27\x27/, "\x27", rule)
+                sub(sq "[[:space:]]*#.*$", sq, rule)
+                if (substr(rule, 1, 1) == sq && substr(rule, length(rule), 1) == sq) {
+                    rule = substr(rule, 2, length(rule) - 2)
+                } else if (substr(rule, 1, 1) == "\"" && substr(rule, length(rule), 1) == "\"") {
+                    rule = substr(rule, 2, length(rule) - 2)
+                }
+                gsub(/[[:space:]]+$/, "", rule)
+                gsub(sq sq, sq, rule)
                 if (rule != "" && !(rule in known) && rule !~ /^#/ && rule !~ /1e100\.net|oschina\.net|in-addr\.arpa|@@\|\|googleapis\.com\^\$important|@@\|\|app-measurement\.com|@@\|\|crashlytics\.com|@@\|\|xp\.apple\.com|\|\|update\.googleapis\.com|\|\|ad\.\*\^/) {
                     known[rule] = 1
                     extra[++n] = rule
@@ -149,8 +154,8 @@ if [ -f "$BACKUP_DIR/AdGuardHome.yaml" ] && [ -f "$BIN_DIR/AdGuardHome.yaml" ]; 
             if (/^filtering:/) {
                 for (i = 1; i <= n; i++) {
                     r = extra[i]
-                    gsub(/\x27/, "\x27\x27", r)
-                    printf "  - \x27%s\x27\n", r
+                    gsub(sq, sq sq, r)
+                    printf "  - %s%s%s\n", sq, r, sq
                 }
             }
             print $0
