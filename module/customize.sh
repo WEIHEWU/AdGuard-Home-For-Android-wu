@@ -30,15 +30,24 @@ for file in uninstall.sh module.prop service.sh action.sh AdGuardHomeManager.apk
   unzip -q -o "$ZIPFILE" "$file" -d "$MODPATH"
 done
 
-# 检查并停止运行中的进程
+# 检查并停止运行中的进程（含旧版自愈守护单例）
 if [ -d "$AGH_DIR" ]; then
 i18n_print "- Stopping AdGuardHome and its additional processes" "- 正在终止AdGuardHome及附加进程"
+for pid_f in /dev/shm/agh_watchdog.pid "$AGH_DIR/run/agh_watchdog.pid"; do
+    if [ -f "$pid_f" ]; then
+        old_wd=$(cat "$pid_f" 2>/dev/null)
+        [ -n "$old_wd" ] && kill -9 "$old_wd" 2>/dev/null
+        rm -f "$pid_f" 2>/dev/null
+    fi
+done
+rm -f /dev/shm/agh_watchdog.lock /dev/shm/agh_manual_stop 2>/dev/null
+pkill -f "/AdGuardHome/service.sh.*--watchdog" 2>/dev/null
 while true; do
     found=0
     for p in /proc/[0-9]*; do
         IFS= read -r cmd < "$p/cmdline"
         case "$cmd" in
-            "$AGH_DIR/bin/AdGuardHome"*|*"$AGH_DIR/scripts/"*)
+            "$AGH_DIR/bin/AdGuardHome"*|*"$AGH_DIR/scripts/"*|*"/AdGuardHome/service.sh"*"--watchdog"*)
                 kill -9 "${p#/proc/}"
                 found=1
                 ;;

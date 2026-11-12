@@ -20,19 +20,9 @@ AGH_GID=23333
 export PATH="/data/adb/ksu/bin:/data/adb/ap/bin:/data/adb/magisk:$PATH"
 
 [ -f "$AGH_DIR/scripts/config.prop" ] && . "$AGH_DIR/scripts/config.prop"
-redir_port=${redir_port:-31587}
+redir_port=${redir_port:-55453}
 ENABLE_SNI=${ENABLE_SNI:-0}
 VPN_DNS_TAKEOVER=${VPN_DNS_TAKEOVER:-auto}
-
-# 1. 防止重复启动后台守护自身（允许 --reload / --apply-allowlist 单次极速热重载；若软重启重新触发本脚本，先重载规则再退出）
-if [ "$1" != "--reload" ] && [ "$1" != "--apply-allowlist" ]; then
-    for pid in $(pidof -x "$0" 2>/dev/null); do
-        if [ "$pid" != "$$" ]; then
-            "$0" --reload >/dev/null 2>&1
-            exit 0
-        fi
-    done
-fi
 
 # 2. 高效检测 AdGuardHome 是否存活 (O(1) 单次内核调用，校验进程名防 PID 复用误判)
 agh_running() {
@@ -102,11 +92,11 @@ get_allowlist_uids() {
 
 # 5. 精准 SNI 队列规则（首包严密盘查，承载数据流秒级直通 + 宽松 rp_filter 彻底消灭 TCP RST 假死转圈）
 rebuild_sni() {
-    # 彻底清理旧链
-    iptables -w 2 -t filter -D OUTPUT -j AGH_SNI 2>/dev/null
+    # 彻底幂等清理旧链（循环移除所有重复跳转）
+    while iptables -w 2 -t filter -D OUTPUT -j AGH_SNI 2>/dev/null; do :; done
     iptables -w 2 -t filter -F AGH_SNI 2>/dev/null
     iptables -w 2 -t filter -X AGH_SNI 2>/dev/null
-    ip6tables -w 2 -t filter -D OUTPUT -j AGH_SNI 2>/dev/null
+    while ip6tables -w 2 -t filter -D OUTPUT -j AGH_SNI 2>/dev/null; do :; done
     ip6tables -w 2 -t filter -F AGH_SNI 2>/dev/null
     ip6tables -w 2 -t filter -X AGH_SNI 2>/dev/null
 
@@ -338,14 +328,20 @@ should_takeover_vpn_dns() {
 
 # 6. 应用高效 DNS 重定向规则
 apply_rules() {
+    [ -f "$AGH_DIR/scripts/config.prop" ] && . "$AGH_DIR/scripts/config.prop"
+    redir_port=${redir_port:-55453}
+    ENABLE_SNI=${ENABLE_SNI:-0}
+    VPN_DNS_TAKEOVER=${VPN_DNS_TAKEOVER:-auto}
+
     allow_uids=$(get_allowlist_uids)
     should_takeover_vpn_dns
     takeover_vpn=$?
 
-    # 建立 IPv4 DNS 重定向
+    # 建立 IPv4 DNS 重定向（先幂等移除所有旧跳转再插入唯一跳转，杜绝多次软重启重复叠加）
+    while iptables -w 2 -t nat -D OUTPUT -j ADGUARD 2>/dev/null; do :; done
     iptables -w 2 -t nat -N ADGUARD 2>/dev/null
-    iptables -w 2 -t nat -C OUTPUT -j ADGUARD 2>/dev/null || iptables -w 2 -t nat -I OUTPUT 1 -j ADGUARD
     iptables -w 2 -t nat -F ADGUARD
+    iptables -w 2 -t nat -I OUTPUT 1 -j ADGUARD
     # 【核心修复】：始终优先挂载专属 GID (23333) 豁免规则，与系统 netd (uid 0, gid 0) 彻底物理隔离！
     # 无论 WiFi / 回国 VPN 的 DNS 是否与上游 IP (如 1.1.1.1 / 8.8.8.8 / 223.5.5.5) 撞车，
     # netd 发起的 53 端口系统解析 100% 强制进入 AdGuardHome，同时 AGH 自身的 Bootstrap/上游请求永不自回环死锁！
@@ -389,7 +385,8 @@ apply_rules() {
     fi
     if ip6tables -w 2 -t nat -A ADGUARD6_NAT -p udp --dport 53 -j REDIRECT --to-ports "$redir_port" 2>/dev/null && \
        ip6tables -w 2 -t nat -A ADGUARD6_NAT -p tcp --dport 53 -j REDIRECT --to-ports "$redir_port" 2>/dev/null; then
-        ip6tables -w 2 -t nat -C OUTPUT -j ADGUARD6_NAT 2>/dev/null || ip6tables -w 2 -t nat -I OUTPUT 1 -j ADGUARD6_NAT 2>/dev/null
+        while ip6tables -w 2 -t nat -D OUTPUT -j ADGUARD6_NAT 2>/dev/null; do :; done
+        ip6tables -w 2 -t nat -I OUTPUT 1 -j ADGUARD6_NAT 2>/dev/null
         while ip6tables -w 2 -D OUTPUT -j ADGUARD6 2>/dev/null; do :; done
         ip6tables -w 2 -F ADGUARD6 2>/dev/null
         ip6tables -w 2 -X ADGUARD6 2>/dev/null
@@ -397,9 +394,10 @@ apply_rules() {
         while ip6tables -w 2 -t nat -D OUTPUT -j ADGUARD6_NAT 2>/dev/null; do :; done
         ip6tables -w 2 -t nat -F ADGUARD6_NAT 2>/dev/null
         ip6tables -w 2 -t nat -X ADGUARD6_NAT 2>/dev/null
+        while ip6tables -w 2 -D OUTPUT -j ADGUARD6 2>/dev/null; do :; done
         ip6tables -w 2 -N ADGUARD6 2>/dev/null
-        ip6tables -w 2 -C OUTPUT -j ADGUARD6 2>/dev/null || ip6tables -w 2 -I OUTPUT 1 -j ADGUARD6
         ip6tables -w 2 -F ADGUARD6
+        ip6tables -w 2 -I OUTPUT 1 -j ADGUARD6
         ip6tables -w 2 -A ADGUARD6 -m owner --uid-owner 0 --gid-owner "$AGH_GID" -j RETURN 2>/dev/null
         for auid in $allow_uids; do
             ip6tables -w 2 -A ADGUARD6 -m owner --uid-owner "$auid" -j RETURN 2>/dev/null
@@ -423,18 +421,20 @@ apply_rules() {
     fi
 
     # 保护本地 DNS 端口免受公共 Wi-Fi 局域网其他设备探测或滥用（仅允许 lo 回环与本机重定向流量）
+    while iptables -w 2 -t filter -D INPUT -j AGH_INPUT 2>/dev/null; do :; done
     iptables -w 2 -t filter -N AGH_INPUT 2>/dev/null
     iptables -w 2 -t filter -F AGH_INPUT 2>/dev/null
     iptables -w 2 -t filter -A AGH_INPUT -i lo -j RETURN 2>/dev/null
     iptables -w 2 -t filter -A AGH_INPUT -p udp --dport "$redir_port" -j DROP 2>/dev/null
     iptables -w 2 -t filter -A AGH_INPUT -p tcp --dport "$redir_port" -j DROP 2>/dev/null
-    iptables -w 2 -t filter -C INPUT -j AGH_INPUT 2>/dev/null || iptables -w 2 -t filter -I INPUT 1 -j AGH_INPUT 2>/dev/null
+    iptables -w 2 -t filter -I INPUT 1 -j AGH_INPUT 2>/dev/null
+    while ip6tables -w 2 -t filter -D INPUT -j AGH_INPUT 2>/dev/null; do :; done
     ip6tables -w 2 -t filter -N AGH_INPUT 2>/dev/null
     ip6tables -w 2 -t filter -F AGH_INPUT 2>/dev/null
     ip6tables -w 2 -t filter -A AGH_INPUT -i lo -j RETURN 2>/dev/null
     ip6tables -w 2 -t filter -A AGH_INPUT -p udp --dport "$redir_port" -j DROP 2>/dev/null
     ip6tables -w 2 -t filter -A AGH_INPUT -p tcp --dport "$redir_port" -j DROP 2>/dev/null
-    ip6tables -w 2 -t filter -C INPUT -j AGH_INPUT 2>/dev/null || ip6tables -w 2 -t filter -I INPUT 1 -j AGH_INPUT 2>/dev/null
+    ip6tables -w 2 -t filter -I INPUT 1 -j AGH_INPUT 2>/dev/null
 
     rebuild_dot_guard "$takeover_vpn"
     rebuild_sni
@@ -505,126 +505,56 @@ preflight_check() {
     return 1
 }
 
-# 11. VPN 自动识别与零断流状态机 (带 6 秒防抖冷却，专治弱网闪断，不重写配置文件不重启核心监听)
-vpn_status_last="init"
-vpn_pending_status=""
-vpn_pending_count=0
-
-check_vpn_and_cache() {
-    # 极速 O(1) 探测是否存在虚拟 VPN 接口 (tun* / wg* / ppp*)
-    vpn_now="off"
-    for iface in /sys/class/net/tun* /sys/class/net/wg* /sys/class/net/ppp*; do
-        if [ -d "$iface" ]; then
-            vpn_now="on"
-            break
-        fi
-    done
-
-    # 开机首次初始化：直接同步当前真实状态，不进入防抖等待
-    if [ "$vpn_status_last" = "init" ]; then
-        vpn_status_last="$vpn_now"
-        return 0
-    fi
-
-    # 若当前探测状态与已生效状态一致，说明网络稳定，重置防抖计数器
-    if [ "$vpn_now" = "$vpn_status_last" ]; then
-        vpn_pending_status=""
-        vpn_pending_count=0
-        return 0
-    fi
-
-    # 状态发生变化：启动防抖冷却确认机制（避免极端弱网下频繁闪断导致的重复切换）
-    if [ "$vpn_now" = "$vpn_pending_status" ]; then
-        vpn_pending_count=$((vpn_pending_count + 1))
-    else
-        vpn_pending_status="$vpn_now"
-        vpn_pending_count=1
-    fi
-
-    # 连续稳定确认至少 2 次（持续 6 秒以上），才真正判定为有效切换
-    if [ "$vpn_pending_count" -ge 2 ]; then
-        # 重新执行一次本地智能识别并更新 iptables ADGUARD / ADGUARD6_NAT / ADGUARD_DOT 规则链（0 网络包、单次执行）
-        apply_rules
-        vpn_mode_cur=$(cat "$AGH_DIR/vpn_mode_status" 2>/dev/null)
-        ndc resolver flushenv 2>/dev/null
-        if [ "$vpn_now" = "on" ]; then
-            if [ "$vpn_mode_cur" = "takeover" ]; then
-                echo "$(date '+%F %T') [VPN] 检测到 VPN 已连接，智能识别为「回国加速去广告模式」（强制接管 DNS 并刷新系统解析缓存）" >> "$MAIN_LOG"
-            else
-                echo "$(date '+%F %T') [VPN] 检测到 VPN 已连接，智能识别为「翻墙出国防污染模式」（放行 VPN 隧道 DNS，由 SNI 拦截广告）" >> "$MAIN_LOG"
-            fi
-        else
-            echo "$(date '+%F %T') [VPN] 检测到 VPN 已断开，已恢复默认直连模式并刷新本地 DNS" >> "$MAIN_LOG"
-        fi
-        vpn_status_last="$vpn_now"
-        vpn_pending_status=""
-        vpn_pending_count=0
-    fi
-}
-
-# 支持管理器即时触发单次规则重载与白名单刷新（无需重启守护循环）
-if [ "$1" = "--reload" ] || [ "$1" = "--apply-allowlist" ]; then
-    apply_rules
-    refresh_network
-    exit 0
-fi
-
-# --- 初始化执行 ---
-clean_legacy_conflicts
-clean_hotspot_rules
-
-# 执行启动预检：只有本地服务真实就绪才挂载规则，杜绝开机静默变砖
-if preflight_check; then
-    apply_rules
-    refresh_network
-fi
-
-# --- 轻量化守护循环：秒级感应软重启 netd 重建与 VPN 切换，60 秒维持规则自愈 ---
-last_netd_pid=$(pidof netd 2>/dev/null | awk '{print $1}')
-loop_cnt=0
-while true; do
-    sleep 3
-
-    # 检测模块是否被用户在管理器中停用，若是则立即干净还原并退出
-    if [ -f "/data/adb/modules/AdGuardHome/disable" ]; then
+# 11. 幂等命令行子指令分发（统一由 service.sh 单例守护负责 30 秒低功耗巡检，本脚本执行完毕立即退出）
+case "${1:-}" in
+    clean|--clean)
+        clean_legacy_conflicts
         clean_all_rules
-        killall -9 AdGuardHome 2>/dev/null || kill -9 $(pidof AdGuardHome 2>/dev/null) 2>/dev/null
         exit 0
-    fi
-
-    # 【临时 Root 软重启秒级自愈】：零开销检测系统 netd 是否在软重启中重建（netd 重启会冲掉全部 iptables）
-    if [ -z "$last_netd_pid" ] || [ ! -d "/proc/$last_netd_pid" ]; then
-        if [ "$(getprop sys.boot_completed 2>/dev/null)" = "1" ]; then
-            cur_netd_pid=$(pidof netd 2>/dev/null | awk '{print $1}')
-            if [ -n "$cur_netd_pid" ]; then
-                last_netd_pid="$cur_netd_pid"
-                agh_running || start_agh
-                apply_rules
-                refresh_network
-                echo "$(date '+%F %T') [SOFT-REBOOT] 检测到系统 netd 重建 (PID: $cur_netd_pid)，已秒级重挂 DNS 与 SNI 防火墙规则" >> "$MAIN_LOG"
-            fi
-        fi
-    fi
-
-    # 极速秒级检查 VPN 状态切换（0% CPU）
-    check_vpn_and_cache
-
-    loop_cnt=$((loop_cnt + 3))
-    if [ "$loop_cnt" -ge 60 ]; then
-        loop_cnt=0
-        [ -f "$AGH_DIR/scripts/config.prop" ] && . "$AGH_DIR/scripts/config.prop"
-
-        if ! agh_running; then
-            start_agh
-            sleep 2
+        ;;
+    disable|stop|--disable|--stop)
+        mkdir -p /dev/shm 2>/dev/null
+        : > /dev/shm/agh_manual_stop 2>/dev/null || { mkdir -p "$AGH_DIR/run" 2>/dev/null; : > "$AGH_DIR/run/agh_manual_stop" 2>/dev/null; }
+        clean_legacy_conflicts
+        clean_all_rules
+        killall -15 AdGuardHome 2>/dev/null
+        sleep 1
+        pidof AdGuardHome >/dev/null 2>&1 && killall -9 AdGuardHome 2>/dev/null
+        rm -f "$PID_FILE" 2>/dev/null
+        refresh_network
+        exit 0
+        ;;
+    --reload|--apply-allowlist)
+        if agh_running; then
+            clean_legacy_conflicts
+            clean_hotspot_rules
             apply_rules
+            refresh_network
         fi
-
-        # 检查 OUTPUT 挂载点、ADGUARD 重定向规则及 AGH_SNI 规则是否被系统 netd 冲掉，若是则自动修复
-        if ! iptables -w 2 -t nat -C OUTPUT -j ADGUARD 2>/dev/null || \
-           ! iptables -w 2 -t nat -C ADGUARD -p udp --dport 53 -j REDIRECT --to-ports "$redir_port" 2>/dev/null || \
-           { [ "${ENABLE_SNI:-0}" != "0" ] && ! iptables -w 2 -t filter -C AGH_SNI -o lo -j RETURN 2>/dev/null; }; then
+        exit 0
+        ;;
+    enable|--enable)
+        clean_legacy_conflicts
+        clean_hotspot_rules
+        if preflight_check; then
             apply_rules
+            refresh_network
+            exit 0
         fi
-    fi
-done &
+        exit 1
+        ;;
+    *)
+        # 兼容管理器 App 无参调用 (reloadFirewallRules)：自动解除手动停止标记，确保核心与单例守护就绪并重挂规则
+        rm -f /dev/shm/agh_manual_stop "$AGH_DIR/run/agh_manual_stop" "$AGH_DIR/manual_stop" "$AGH_DIR/stopped" "$AGH_DIR/app_pause_active" 2>/dev/null
+        clean_legacy_conflicts
+        clean_hotspot_rules
+        if preflight_check; then
+            apply_rules
+            refresh_network
+        fi
+        if [ -f "/data/adb/modules/AdGuardHome/service.sh" ]; then
+            /system/bin/sh "/data/adb/modules/AdGuardHome/service.sh" start >/dev/null 2>&1 &
+        fi
+        exit 0
+        ;;
+esac
