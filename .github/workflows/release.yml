@@ -1,11 +1,6 @@
 name: Publish Release
 
 on:
-  push:
-    branches:
-      - main
-    tags:
-      - 'v*'
   workflow_dispatch:
 
 permissions:
@@ -18,32 +13,21 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Remove obsolete split release assets if present
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build Unified Flashable Package
         run: |
-          gh release delete-asset v20261111 AdGuard_Home_gogogo_20261111_CN.zip --repo "$GITHUB_REPOSITORY" --yes 2>/dev/null || true
-          gh release delete-asset v20261111 AdGuard_Home_gogogo_20261111_Overseas.zip --repo "$GITHUB_REPOSITORY" --yes 2>/dev/null || true
+          VERSION_TAG="${GITHUB_REF_NAME:-v20261112}"
+          VERSION_DATE="${VERSION_TAG#v}"
+          chmod +x ./build.sh
+          ./build.sh "$VERSION_DATE"
+          cp -f module/AdGuardHomeManager.apk releases/AdGuardHomeManager.apk
+          echo "VERSION_TAG=$VERSION_TAG" >> "$GITHUB_ENV"
+          echo "VERSION_DATE=$VERSION_DATE" >> "$GITHUB_ENV"
 
       - name: Create GitHub Release and Upload Packages
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v20261111
-          name: "AdGuard-Home-GoGoGo 20261111"
-          body: |
-            ### AdGuard-Home-GoGoGo `20261111` (全能统一单包版)
-
-            **AdGuard-Home-GoGoGo - 面向 Android 的轻量级 AdGuard Home 模块，支持海外/国内双模一键切换与精准去广告**
-
-            已将海外版与国内版合并为单一全能模块包 **`AdGuard_Home_gogogo_20261111.zip`**（模块名称：`AdGuard Home GoGoGo`，**默认激活 🌐 海外模式**），并内置最新 **[AdGuard-Home-GoGoGo Manager v2.24.15](https://github.com/WEIHEWU/AdGuard-Home-GoGoGo-Manager)**（桌面名称：`AdGuard Home GoGoGo`，快捷磁贴：`AGH GoGoGo`，包名：`com.wu.adgogogo`），支持在 App 内一键无损热切换「🌐 海外模式 (Overseas)」与「🇨🇳 国内模式 (CN)」。
-
-            #### 🆕 20261111 更新亮点
-            - **海外 / 国内双模合一与 App 内一键热切换**：
-              - 告别双包分别刷入，单包内置 `AdGuardHome_overseas.yaml`（默认激活）与 `AdGuardHome_cn.yaml` 双预设及 `switch_mode.sh` 热切换引擎；
-              - 在管理器首页或 DNS 设置页点击即可毫秒级热切换上游加密 DNS、规则订阅源及 VPN 伴生策略，100% 保留个人自定义规则与动态端口。
-            - **取长补短的 5 大核心规则库（230,574 条不重复规则，1.2 秒极速启动）**：
-              - 完整启用 `GOODBYEADS` + `AdGuard DNS filter`（去重独有库）+ `AWAvenue 秋风规则` + `URLHaus` + `GOODBYEADS 白名单` 及 `1,615` 条精调自定义规则；
-              - 升级最新 `AdGuardHome` 二进制核心（`v2026-11-07`），统一采用 `nsenter -G 23333 -t 1` 进程组隔离启动，彻底根除回环自吞噬与 YAML 缩进损坏问题（Issue #2）。
+          tag_name: ${{ env.VERSION_TAG }}
+          name: "AdGuard Home GoGoGo ${{ env.VERSION_TAG }} (Ultra-Slim Core)"
           files: |
-            releases/AdGuard_Home_gogogo_20261111.zip
+            releases/AdGuard_Home_gogogo_${{ env.VERSION_DATE }}.zip
             releases/AdGuardHomeManager.apk
