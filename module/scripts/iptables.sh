@@ -34,7 +34,7 @@ done
 
 [ -f "$AGH_DIR/scripts/config.prop" ] && . "$AGH_DIR/scripts/config.prop"
 redir_port=${redir_port:-55453}
-ENABLE_SNI=${ENABLE_SNI:-0}
+ENABLE_SNI=${ENABLE_SNI:-1}
 VPN_DNS_TAKEOVER=${VPN_DNS_TAKEOVER:-auto}
 
 # 2. 高效检测 AdGuardHome 是否存活与本地 UDP DNS 端口是否真实监听
@@ -91,115 +91,85 @@ get_allowlist_uids() {
     ' "$AGH_DIR/app-allow.txt" /data/system/packages.list 2>/dev/null
 }
 
-# 5. 精准 SNI 队列规则（首包严密盘查，承载数据流秒级直通 + 宽松 rp_filter 彻底消灭 TCP RST 假死转圈）
-rebuild_sni() {
-    # 彻底幂等清理旧链（循环移除所有重复跳转）
+# 5. 首包级低功耗 mangle 表 SNI 队列规则（仅查 TLS 握手前 4 包 + 强制 --queue-bypass + 严禁修改任何 sysctl 内核参数）
+clean_sni_rules() {
+    # 幂等清理 mangle 表 AGH_SNI 链（IPv4 & IPv6）
+    while iptables -w 2 -t mangle -D OUTPUT -j AGH_SNI 2>/dev/null; do :; done
+    iptables -w 2 -t mangle -F AGH_SNI 2>/dev/null
+    iptables -w 2 -t mangle -X AGH_SNI 2>/dev/null
+    while ip6tables -w 2 -t mangle -D OUTPUT -j AGH_SNI 2>/dev/null; do :; done
+    ip6tables -w 2 -t mangle -F AGH_SNI 2>/dev/null
+    ip6tables -w 2 -t mangle -X AGH_SNI 2>/dev/null
+
+    # 同步清理旧版可能遗留的 filter 表 AGH_SNI 链（IPv4 & IPv6）
     while iptables -w 2 -t filter -D OUTPUT -j AGH_SNI 2>/dev/null; do :; done
     iptables -w 2 -t filter -F AGH_SNI 2>/dev/null
     iptables -w 2 -t filter -X AGH_SNI 2>/dev/null
     while ip6tables -w 2 -t filter -D OUTPUT -j AGH_SNI 2>/dev/null; do :; done
     ip6tables -w 2 -t filter -F AGH_SNI 2>/dev/null
     ip6tables -w 2 -t filter -X AGH_SNI 2>/dev/null
+}
 
+rebuild_sni() {
+    clean_sni_rules
     [ "$ENABLE_SNI" = "0" ] && return 0
-
-    # 将所有网卡 rp_filter 设为宽松模式 (2)，根治上游核心 snifilter 发送伪造 TCP RST 时因严格反向路径校验失败导致 App 卡顿转圈 10~30 秒的顽疾
-    for rpf in /proc/sys/net/ipv4/conf/*/rp_filter; do
-        [ -w "$rpf" ] && echo 2 > "$rpf" 2>/dev/null
-    done
 
     sni_queue=$(sed -n 's/^[[:space:]]*queue_num:[[:space:]]*\([0-9][0-9]*\).*/\1/p' \
         "$BIN_DIR/AdGuardHome.yaml" 2>/dev/null | head -n 1)
-    [ -z "$sni_queue" ] && sni_queue=7
-    [ -z "$sni_ports" ] && sni_ports="443,8443"
-    sni_drop_quic=$(awk '/^sni_filter:/{f=1} f && /drop_quic:/{print $2; exit}' "$BIN_DIR/AdGuardHome.yaml" 2>/dev/null)
+    [ -z "$sni_queue" ] && sni_queue=0
     allow_uids=$(get_allowlist_uids)
 
     # --- 局域网与本地保留地址段全协议免检直通列表 (LAN / Loopback / Link-Local Bypass) ---
     LAN_BYPASS_IPV4="127.0.0.0/8 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 169.254.0.0/16 224.0.0.0/4 240.0.0.0/4 0.0.0.0/8"
     LAN_BYPASS_IPV6="::1/128 fc00::/7 fe80::/10 ff00::/8 ::ffff:127.0.0.0/104 ::ffff:10.0.0.0/104 ::ffff:172.16.0.0/108 ::ffff:192.168.0.0/112 ::ffff:169.254.0.0/112"
 
-    # --- IPv4 SNI 链配置 ---
-    iptables -w 2 -t filter -N AGH_SNI 2>/dev/null
-    iptables -w 2 -t filter -A AGH_SNI -o lo -j RETURN
-    # 始终豁免 AdGuardHome 自身进程 (uid 0 + gid 23333) 的出站 DoH 与规则订阅更新流量，免进 NFQUEUE 自嗅探
-    iptables -w 2 -t filter -A AGH_SNI -m owner --uid-owner 0 --gid-owner "$AGH_GID" -j RETURN 2>/dev/null
-    # 内核级豁免放行名单内的应用 UID（0 延迟、全天候直通，不进 NFQUEUE 嗅探）
+    # --- IPv4 mangle 表 AGH_SNI 链配置 ---
+    iptables -w 2 -t mangle -N AGH_SNI 2>/dev/null
+    iptables -w 2 -t mangle -F AGH_SNI 2>/dev/null
+    iptables -w 2 -t mangle -A AGH_SNI -o lo -j RETURN
+    # 豁免 AdGuardHome 核心自身流量 (gid 23333：含 DoH 上游、规则更新与 TCP RST 注入包)，绝不自回环
+    iptables -w 2 -t mangle -A AGH_SNI -m owner --gid-owner "$AGH_GID" -j RETURN 2>/dev/null
+    # 内核级豁免放行名单内的应用 UID（0 延迟直通，不进 NFQUEUE 嗅探）
     for auid in $allow_uids; do
-        iptables -w 2 -t filter -A AGH_SNI -m owner --uid-owner "$auid" -j RETURN 2>/dev/null
+        iptables -w 2 -t mangle -A AGH_SNI -m owner --uid-owner "$auid" -j RETURN 2>/dev/null
     done
-    # 局域网私有网段与本地回环全协议、全端口直接快速放行（不限制端口与协议，避免 UDP/QUIC 阻断或非标端口受扰；不跳过 198.18.0.0/15 Fake-IP）
+    # 局域网私有网段与本地回环直接快速放行（不跳过 198.18.0.0/15 Fake-IP）
     for net in $LAN_BYPASS_IPV4; do
-        iptables -w 2 -t filter -A AGH_SNI -d "$net" -j RETURN
+        iptables -w 2 -t mangle -A AGH_SNI -d "$net" -j RETURN
     done
-    # 阻断 VPN 虚拟隧道内 (tun+ / wg+ / ppp+) 或显式开启 drop_quic 时的 HTTP/3 (QUIC UDP 443/8443)，
-    # 强制浏览器/WebView 的异步 fetch/XHR/sendBeacon 毫秒级回退至 TCP 443 接受 SNI 审查，同时绝不影响物理网卡上的 Hysteria2/TUIC 等代理客户端
-    if [ "$sni_drop_quic" = "true" ]; then
-        iptables -w 2 -t filter -A AGH_SNI -p udp -m multiport --dports "$sni_ports" -j REJECT --reject-with icmp-port-unreachable 2>/dev/null || \
-            iptables -w 2 -t filter -A AGH_SNI -p udp -m multiport --dports "$sni_ports" -j DROP 2>/dev/null
-    else
-        for viface in tun+ wg+ ppp+; do
-            iptables -w 2 -t filter -A AGH_SNI -o "$viface" -p udp -m multiport --dports "$sni_ports" -j REJECT --reject-with icmp-port-unreachable 2>/dev/null || \
-                iptables -w 2 -t filter -A AGH_SNI -o "$viface" -p udp -m multiport --dports "$sni_ports" -j DROP 2>/dev/null
-        done
-    fi
-    # 【工业级核心优化】：适配 v2026-10-29 核心多段分片 TLS ClientHello 重组机制 (addSegmentLocked)
-    # 1. --tcp-flags SYN,FIN,RST NONE 在内核层直接跳过 SYN 握手包与 FIN/RST 挥手包（0 队列开销）
-    # 2. --connbytes 1:8 覆盖连接前 8 个出站包（含 1~6 个分片的后量子 X25519MLKEM768 超大 ClientHello，无论 ACK 或 PSH,ACK 均完整送入 snifilter 重组）
-    # 3. 第 9 个包及后续成千上万个音视频/文件数据流直接在内核层 RETURN 直通，彻底杜绝 NFQUEUE 满队列丢包与高延迟发热！
-    if iptables -w 2 -t filter -A AGH_SNI -p tcp -m multiport --dports "$sni_ports" \
-        --tcp-flags SYN,FIN,RST NONE \
-        -m connbytes --connbytes 1:8 --connbytes-mode packets --connbytes-dir original \
+    # 首包级低功耗抓包：优先探测内核 connbytes 支持，仅检查 TLS 握手前 4 个数据包；不支持则自动降级为标准 443 NFQUEUE，全程强制 --queue-bypass
+    if ! iptables -w 2 -t mangle -A AGH_SNI -p tcp --dport 443 \
+        -m connbytes --connbytes 1:4 --connbytes-dir original --connbytes-mode packets \
         -j NFQUEUE --queue-num "$sni_queue" --queue-bypass 2>/dev/null; then
-        iptables -w 2 -t filter -A AGH_SNI -p tcp -m multiport --dports "$sni_ports" -j RETURN
-    else
-        # 兼容无 connbytes 扩展模块的兜底规则：仅跳过 <=80 字节的纯 ACK 空确认包，保留 1448B 分片 ClientHello 数据包
-        iptables -w 2 -t filter -A AGH_SNI -p tcp -m multiport --dports "$sni_ports" \
-            -m length --length 0:80 --tcp-flags ALL ACK -j RETURN 2>/dev/null || \
-            iptables -w 2 -t filter -A AGH_SNI -p tcp -m multiport --dports "$sni_ports" \
-                --tcp-flags ALL ACK -j RETURN
-        iptables -w 2 -t filter -A AGH_SNI -p tcp -m multiport --dports "$sni_ports" \
-            --tcp-flags SYN,FIN,RST NONE \
-            -j NFQUEUE --queue-num "$sni_queue" --queue-bypass
+        iptables -w 2 -t mangle -A AGH_SNI -p tcp --dport 443 \
+            -j NFQUEUE --queue-num "$sni_queue" --queue-bypass 2>/dev/null
     fi
-    iptables -w 2 -t filter -C OUTPUT -j AGH_SNI 2>/dev/null || \
-        iptables -w 2 -t filter -I OUTPUT 1 -j AGH_SNI
+    if iptables -w 2 -t mangle -S AGH_SNI 2>/dev/null | grep -q -- "-j NFQUEUE"; then
+        iptables -w 2 -t mangle -C OUTPUT -j AGH_SNI 2>/dev/null || \
+            iptables -w 2 -t mangle -I OUTPUT 1 -j AGH_SNI
+    fi
 
-    # --- IPv6 SNI 链配置 ---
-    ip6tables -w 2 -t filter -N AGH_SNI 2>/dev/null
-    ip6tables -w 2 -t filter -A AGH_SNI -o lo -j RETURN
-    ip6tables -w 2 -t filter -A AGH_SNI -m owner --uid-owner 0 --gid-owner "$AGH_GID" -j RETURN 2>/dev/null
+    # --- IPv6 mangle 表 AGH_SNI 链配置 ---
+    ip6tables -w 2 -t mangle -N AGH_SNI 2>/dev/null
+    ip6tables -w 2 -t mangle -F AGH_SNI 2>/dev/null
+    ip6tables -w 2 -t mangle -A AGH_SNI -o lo -j RETURN 2>/dev/null
+    ip6tables -w 2 -t mangle -A AGH_SNI -m owner --gid-owner "$AGH_GID" -j RETURN 2>/dev/null
     for auid in $allow_uids; do
-        ip6tables -w 2 -t filter -A AGH_SNI -m owner --uid-owner "$auid" -j RETURN 2>/dev/null
+        ip6tables -w 2 -t mangle -A AGH_SNI -m owner --uid-owner "$auid" -j RETURN 2>/dev/null
     done
     for net in $LAN_BYPASS_IPV6; do
-        ip6tables -w 2 -t filter -A AGH_SNI -d "$net" -j RETURN 2>/dev/null
+        ip6tables -w 2 -t mangle -A AGH_SNI -d "$net" -j RETURN 2>/dev/null
     done
-    if [ "$sni_drop_quic" = "true" ]; then
-        ip6tables -w 2 -t filter -A AGH_SNI -p udp -m multiport --dports "$sni_ports" -j REJECT --reject-with icmp6-port-unreachable 2>/dev/null || \
-            ip6tables -w 2 -t filter -A AGH_SNI -p udp -m multiport --dports "$sni_ports" -j DROP 2>/dev/null
-    else
-        for viface in tun+ wg+ ppp+; do
-            ip6tables -w 2 -t filter -A AGH_SNI -o "$viface" -p udp -m multiport --dports "$sni_ports" -j REJECT --reject-with icmp6-port-unreachable 2>/dev/null || \
-                ip6tables -w 2 -t filter -A AGH_SNI -o "$viface" -p udp -m multiport --dports "$sni_ports" -j DROP 2>/dev/null
-        done
-    fi
-    if ip6tables -w 2 -t filter -A AGH_SNI -p tcp -m multiport --dports "$sni_ports" \
-        --tcp-flags SYN,FIN,RST NONE \
-        -m connbytes --connbytes 1:8 --connbytes-mode packets --connbytes-dir original \
+    if ! ip6tables -w 2 -t mangle -A AGH_SNI -p tcp --dport 443 \
+        -m connbytes --connbytes 1:4 --connbytes-dir original --connbytes-mode packets \
         -j NFQUEUE --queue-num "$sni_queue" --queue-bypass 2>/dev/null; then
-        ip6tables -w 2 -t filter -A AGH_SNI -p tcp -m multiport --dports "$sni_ports" -j RETURN
-    else
-        ip6tables -w 2 -t filter -A AGH_SNI -p tcp -m multiport --dports "$sni_ports" \
-            -m length --length 0:100 --tcp-flags ALL ACK -j RETURN 2>/dev/null || \
-            ip6tables -w 2 -t filter -A AGH_SNI -p tcp -m multiport --dports "$sni_ports" \
-                --tcp-flags ALL ACK -j RETURN
-        ip6tables -w 2 -t filter -A AGH_SNI -p tcp -m multiport --dports "$sni_ports" \
-            --tcp-flags SYN,FIN,RST NONE \
-            -j NFQUEUE --queue-num "$sni_queue" --queue-bypass
+        ip6tables -w 2 -t mangle -A AGH_SNI -p tcp --dport 443 \
+            -j NFQUEUE --queue-num "$sni_queue" --queue-bypass 2>/dev/null
     fi
-    ip6tables -w 2 -t filter -C OUTPUT -j AGH_SNI 2>/dev/null || \
-        ip6tables -w 2 -t filter -I OUTPUT 1 -j AGH_SNI
+    if ip6tables -w 2 -t mangle -S AGH_SNI 2>/dev/null | grep -q -- "-j NFQUEUE"; then
+        ip6tables -w 2 -t mangle -C OUTPUT -j AGH_SNI 2>/dev/null || \
+            ip6tables -w 2 -t mangle -I OUTPUT 1 -j AGH_SNI 2>/dev/null
+    fi
 }
 
 # 5b. DoT / DoQ 加密 DNS 端口（853, 784, 8853）智能防绕过链
@@ -331,7 +301,7 @@ should_takeover_vpn_dns() {
 apply_rules() {
     [ -f "$AGH_DIR/scripts/config.prop" ] && . "$AGH_DIR/scripts/config.prop"
     redir_port=${redir_port:-55453}
-    ENABLE_SNI=${ENABLE_SNI:-0}
+    ENABLE_SNI=${ENABLE_SNI:-1}
     VPN_DNS_TAKEOVER=${VPN_DNS_TAKEOVER:-auto}
 
     allow_uids=$(get_allowlist_uids)
@@ -474,12 +444,7 @@ clean_all_rules() {
     while ip6tables -w 2 -t filter -D OUTPUT -j ADGUARD_DOT 2>/dev/null; do :; done
     ip6tables -w 2 -t filter -F ADGUARD_DOT 2>/dev/null
     ip6tables -w 2 -t filter -X ADGUARD_DOT 2>/dev/null
-    while iptables -w 2 -t filter -D OUTPUT -j AGH_SNI 2>/dev/null; do :; done
-    iptables -w 2 -t filter -F AGH_SNI 2>/dev/null
-    iptables -w 2 -t filter -X AGH_SNI 2>/dev/null
-    while ip6tables -w 2 -t filter -D OUTPUT -j AGH_SNI 2>/dev/null; do :; done
-    ip6tables -w 2 -t filter -F AGH_SNI 2>/dev/null
-    ip6tables -w 2 -t filter -X AGH_SNI 2>/dev/null
+    clean_sni_rules
     clean_hotspot_rules
     rm -f "$AGH_DIR/app_pause_active" "$AGH_DIR/vpn_mode_status" 2>/dev/null
 }

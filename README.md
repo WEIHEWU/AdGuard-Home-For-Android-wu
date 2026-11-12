@@ -2,9 +2,9 @@
 
 > **AdGuard-Home-GoGoGo - 面向 Android 的轻量级 AdGuard Home 模块，支持海外/国内双模一键切换与精准去广告**
 
-**[📥 下载全能统一模块包 (AdGuard_Home_gogogo_20261112.2.zip)](https://github.com/WEIHEWU/AdGuard-Home-GoGoGo/releases/download/v20261112.2/AdGuard_Home_gogogo_20261112.2.zip)** · **[📱 单独下载管理器 APK (v2.24.16)](https://github.com/WEIHEWU/AdGuard-Home-GoGoGo/releases/download/v20261112.2/AdGuardHomeManager.apk)** · [Releases 页面 (`v20261112.2`)](https://github.com/WEIHEWU/AdGuard-Home-GoGoGo/releases/latest)
+**[📥 下载全能统一模块包 (AdGuard_Home_gogogo_20261112.3.zip)](https://github.com/WEIHEWU/AdGuard-Home-GoGoGo/releases/download/v20261112.3/AdGuard_Home_gogogo_20261112.3.zip)** · **[📱 单独下载管理器 APK (v2.24.17)](https://github.com/WEIHEWU/AdGuard-Home-GoGoGo/releases/download/v20261112.3/AdGuardHomeManager.apk)** · [Releases 页面 (`v20261112.3`)](https://github.com/WEIHEWU/AdGuard-Home-GoGoGo/releases/latest)
 
-基于 Magisk / KernelSU / APatch 的 **AdGuard-Home-GoGoGo**（模块显示名称：`AdGuard Home GoGoGo`）全设备级纯 DNS 去广告防火墙模块。内置专属深度瘦身核心 **[AdGuard-Home-GoGoGo-Core](https://github.com/WEIHEWU/AdGuard-Home-GoGoGo-Core)**（`11.44 MiB` 纯静态 `ARMv8.2` LSE 加速、100% 零后台磁盘写 I/O），专为追求**极致省电、零断流、局域网免检直通、临时 Root 软重启兼容、以及 VPN / 代理无缝协同**打造。
+基于 Magisk / KernelSU / APatch 的 **AdGuard-Home-GoGoGo**（模块显示名称：`AdGuard Home GoGoGo`）全设备级满血 DNS + SNI 双引擎去广告防火墙模块。内置专属深度瘦身核心 **[AdGuard-Home-GoGoGo-Core](https://github.com/WEIHEWU/AdGuard-Home-GoGoGo-Core)**（`11.75 MiB` 纯静态 `ARMv8.2` LSE 加速、完整内置 NFQUEUE SNI 过滤、100% 零后台磁盘写 I/O），专为追求**极致省电、零断流、局域网免检直通、临时 Root 软重启 30 秒自愈、以及 VPN / 代理无缝协同**打造。
 
 配套管理器开源仓库：[AdGuard-Home-GoGoGo Manager](https://github.com/WEIHEWU/AdGuard-Home-GoGoGo-Manager)（桌面名称：`AdGuard Home GoGoGo`，快捷磁贴：`AGH GoGoGo`，包名：`com.wu.adgogogo`，已内置于模块刷机包中，刷入时自动安装）
 
@@ -32,9 +32,9 @@
 1. **`nsenter -G 23333` 专属进程组隔离 + 零自吞噬防回环**：
    - 统一采用 `nsenter -G 23333 -t 1` 启动 `AdGuardHome` 核心（`v2026-11-07`），将核心流量（`uid=0, gid=23333`）与安卓系统 `netd`（`uid=0, gid=0`）在内核层彻底物理隔离；
    - 无论当前 Wi-Fi 或 VPN 的系统 DNS 是否与上游 IP（如 `1.1.1.1` / `8.8.8.8` / `223.5.5.5`）重合，均能 100% 拦截系统 DNS 请求且绝不发生核心自吞噬回环。
-2. **首包精准 SNI 嗅探 (`AGH_SNI`) + 局域网全协议免检直通 (`LAN Bypass`)**：
-   - 采用 `connbytes 1:8` 首包盘查 + 网卡 `rp_filter=2` 宽松反向路径校验，仅对每个新 TCP 连接的前 8 个握手包（兼容现代混合后量子 TLS 分片 `ClientHello`）送入 NFQUEUE 嗅探，后续视频/下载承载流在内核层直接 `RETURN` 放行；
-   - 在 `AGH_SNI` 与 `ADGUARD_DOT` 顶层全协议豁免局域网私有网段（`127.0.0.0/8`, `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `169.254.0.0/16` 及 IPv6 `fc00::/7`, `fe80::/10`），完美访问局域网 NAS、投影仪、TVBox 及非标端口 HTTP 服务。
+2. **首包级低功耗 `mangle` 表 SNI 嗅探 (`AGH_SNI`) + 局域网免检直通 + 零 `sysctl` 侵入**：
+   - 在 `iptables -t mangle` / `ip6tables -t mangle` 挂载 `AGH_SNI` 链，优先探测内核 `connbytes` 支持（`--connbytes 1:4 --connbytes-dir original --connbytes-mode packets -j NFQUEUE --queue-num 0 --queue-bypass`，不支持时自动回退标准 `443` `NFQUEUE`），仅检查 TLS 握手前 4 个数据包且强制 `--queue-bypass` 零断流，**全程严禁修改任何 `sysctl` 内核参数**；
+   - 在 `AGH_SNI` 与 `ADGUARD_DOT` 顶层全协议豁免核心自身（`--gid-owner 23333`）与局域网私有网段（`127.0.0.0/8`, `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `169.254.0.0/16` 及 IPv6 `fc00::/7`, `fe80::/10`），完美访问局域网 NAS、投影仪、TVBox 及非标端口 HTTP 服务。
 3. **分应用白名单内核级直通 (`App Allowlist`)**：
    - 在配套管理器中勾选任意应用加入白名单后，[`iptables.sh`](module/scripts/iptables.sh) 直接在内核 `ADGUARD`、`ADGUARD6_NAT`、`ADGUARD_DOT`、`AGH_SNI` 四条链顶层通过 `-m owner --uid-owner` 精准放行该应用流量，零后台轮询、零发热且不影响其他应用的去广告保护。
 4. **双模代理自适应（通吃“独立 VPN App”与“填订阅链接”）**：
@@ -58,7 +58,7 @@
 
 ```bash
 chmod +x build.sh
-./build.sh 20261112.2
+./build.sh 20261112.3
 ```
 
 ## 维护与开源

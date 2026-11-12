@@ -1947,8 +1947,7 @@ filtering:
 sni_filter:
   ports:
     - 443
-    - 8443
-  queue_num: 7
+  queue_num: 0
   drop_quic: false
 clients:
   runtime_sources:

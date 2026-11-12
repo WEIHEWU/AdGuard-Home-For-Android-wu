@@ -49,6 +49,14 @@ while ip6tables -w 2 -t filter -D OUTPUT -j ADGUARD_DOT 2>/dev/null; do :; done
 ip6tables -w 2 -t filter -F ADGUARD_DOT 2>/dev/null
 ip6tables -w 2 -t filter -X ADGUARD_DOT 2>/dev/null
 
+while iptables -w 2 -t mangle -D OUTPUT -j AGH_SNI 2>/dev/null; do :; done
+iptables -w 2 -t mangle -F AGH_SNI 2>/dev/null
+iptables -w 2 -t mangle -X AGH_SNI 2>/dev/null
+
+while ip6tables -w 2 -t mangle -D OUTPUT -j AGH_SNI 2>/dev/null; do :; done
+ip6tables -w 2 -t mangle -F AGH_SNI 2>/dev/null
+ip6tables -w 2 -t mangle -X AGH_SNI 2>/dev/null
+
 while iptables -w 2 -t filter -D OUTPUT -j AGH_SNI 2>/dev/null; do :; done
 iptables -w 2 -t filter -F AGH_SNI 2>/dev/null
 iptables -w 2 -t filter -X AGH_SNI 2>/dev/null

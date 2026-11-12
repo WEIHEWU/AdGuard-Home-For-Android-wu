@@ -107,10 +107,16 @@ while iptables -w 2 -D OUTPUT -p udp --dport 443 -j REJECT 2>/dev/null; do :; do
 while ip6tables -w 2 -D OUTPUT -p tcp --dport 853 -j REJECT 2>/dev/null; do :; done
 while ip6tables -w 2 -D OUTPUT -p udp --dport 853 -j REJECT 2>/dev/null; do :; done
 while ip6tables -w 2 -D OUTPUT -p udp --dport 443 -j REJECT 2>/dev/null; do :; done
-iptables -w 2 -t filter -D OUTPUT -j AGH_SNI 2>/dev/null
+while iptables -w 2 -t mangle -D OUTPUT -j AGH_SNI 2>/dev/null; do :; done
+iptables -w 2 -t mangle -F AGH_SNI 2>/dev/null
+iptables -w 2 -t mangle -X AGH_SNI 2>/dev/null
+while ip6tables -w 2 -t mangle -D OUTPUT -j AGH_SNI 2>/dev/null; do :; done
+ip6tables -w 2 -t mangle -F AGH_SNI 2>/dev/null
+ip6tables -w 2 -t mangle -X AGH_SNI 2>/dev/null
+while iptables -w 2 -t filter -D OUTPUT -j AGH_SNI 2>/dev/null; do :; done
 iptables -w 2 -t filter -F AGH_SNI 2>/dev/null
 iptables -w 2 -t filter -X AGH_SNI 2>/dev/null
-ip6tables -w 2 -t filter -D OUTPUT -j AGH_SNI 2>/dev/null
+while ip6tables -w 2 -t filter -D OUTPUT -j AGH_SNI 2>/dev/null; do :; done
 ip6tables -w 2 -t filter -F AGH_SNI 2>/dev/null
 ip6tables -w 2 -t filter -X AGH_SNI 2>/dev/null
 
@@ -177,7 +183,7 @@ if [ -f "$BACKUP_DIR/config.prop" ]; then
         echo "PROXY_URL=\"$old_url\"" >> "$SCRIPT_DIR/config.prop"
         i18n_print "- Preserved PROXY_URL from backup" "- 已从备份恢复 PROXY_URL"
     fi
-    for key in sni_ports VPN_DNS_TAKEOVER RUN_MODE; do
+    for key in VPN_DNS_TAKEOVER RUN_MODE; do
         old_val=$(sed -n "s/^${key}=//p" "$BACKUP_DIR/config.prop" | head -n 1)
         if [ -n "$old_val" ]; then
             sed -i "s|^${key}=.*|${key}=${old_val}|" "$SCRIPT_DIR/config.prop" 2>/dev/null

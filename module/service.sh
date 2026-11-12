@@ -4,7 +4,7 @@
 # 特性：
 # 1. 全局内存单例锁 (/dev/shm/agh_watchdog.pid + kill -0 + cmdline 校验，兼容 Android mksh)
 # 2. 脱离 App su -c 会话与 cgroup (escape_app_cgroup + setsid + nsenter -t 1 根命名空间)
-# 3. 防断网安全阀：核心未存活或端口未监听时立即卸载 nat ADGUARD 规则，绝不死锁断网
+# 3. 防断网安全阀：核心未存活或端口未监听时立即联动卸载 nat (ADGUARD) 与 mangle (AGH_SNI) 双链，绝不断网
 # 4. 30 秒无锁低功耗巡检（0 Wakelock），核心存活零干扰保留 24h 内存统计
 # ==============================================================================
 
@@ -215,9 +215,30 @@ port_is_free() {
     fi
 }
 
-# 防断网安全阀：一旦核心未运行或端口未监听，立即卸下 iptables nat ADGUARD 转发规则，严禁将系统 DNS 导向死端口
+# 防断网安全阀：一旦核心未运行或端口未监听，立即联动卸下 nat (DNS) 与 mangle (SNI) 双链，绝不断网
 disarm_nat_safety_valve() {
-    [ -f "$SCRIPT_DIR/iptables.sh" ] && "$SH_BIN" "$SCRIPT_DIR/iptables.sh" clean >/dev/null 2>&1
+    if [ -f "$SCRIPT_DIR/iptables.sh" ]; then
+        "$SH_BIN" "$SCRIPT_DIR/iptables.sh" clean >/dev/null 2>&1
+    else
+        while iptables -w 2 -t nat -D OUTPUT -j ADGUARD 2>/dev/null; do :; done
+        iptables -w 2 -t nat -F ADGUARD 2>/dev/null
+        iptables -w 2 -t nat -X ADGUARD 2>/dev/null
+        while ip6tables -w 2 -t nat -D OUTPUT -j ADGUARD6_NAT 2>/dev/null; do :; done
+        ip6tables -w 2 -t nat -F ADGUARD6_NAT 2>/dev/null
+        ip6tables -w 2 -t nat -X ADGUARD6_NAT 2>/dev/null
+        while iptables -w 2 -t mangle -D OUTPUT -j AGH_SNI 2>/dev/null; do :; done
+        iptables -w 2 -t mangle -F AGH_SNI 2>/dev/null
+        iptables -w 2 -t mangle -X AGH_SNI 2>/dev/null
+        while ip6tables -w 2 -t mangle -D OUTPUT -j AGH_SNI 2>/dev/null; do :; done
+        ip6tables -w 2 -t mangle -F AGH_SNI 2>/dev/null
+        ip6tables -w 2 -t mangle -X AGH_SNI 2>/dev/null
+        while iptables -w 2 -t filter -D OUTPUT -j AGH_SNI 2>/dev/null; do :; done
+        iptables -w 2 -t filter -F AGH_SNI 2>/dev/null
+        iptables -w 2 -t filter -X AGH_SNI 2>/dev/null
+        while ip6tables -w 2 -t filter -D OUTPUT -j AGH_SNI 2>/dev/null; do :; done
+        ip6tables -w 2 -t filter -F AGH_SNI 2>/dev/null
+        ip6tables -w 2 -t filter -X AGH_SNI 2>/dev/null
+    fi
 }
 
 # 构建 Android 系统与 APEX Conscrypt 根证书合并包
@@ -371,14 +392,8 @@ ensure_agh_started() {
         fi
 
         sed -i "/^dns:/,/^[^[:space:]]/ s/^\([[:space:]]*port:\) [0-9]*/\1 $R1/; s/^\([[:space:]]*address:\) 127\.0\.0\.1:[0-9]*/\1 127.0.0.1:$R2/" "$BIN_DIR/AdGuardHome.yaml" 2>/dev/null
+        sed -i "/^sni_filter:/,/^[^[:space:]]/ s/^\([[:space:]]*queue_num:\)[[:space:]]*[0-9]*/\1 0/" "$BIN_DIR/AdGuardHome.yaml" 2>/dev/null
         sed -i "s/^redir_port=.*/redir_port=$R1/" "$SCRIPT_DIR/config.prop" 2>/dev/null
-
-        if [ "${ENABLE_SNI:-0}" = "1" ]; then
-            echo 0 > /proc/sys/net/ipv4/tcp_fastopen 2>/dev/null
-            for rpf in /proc/sys/net/ipv4/conf/*/rp_filter; do
-                [ -w "$rpf" ] && echo 2 > "$rpf" 2>/dev/null
-            done
-        fi
 
         AGH_TZ="$(getprop persist.sys.timezone 2>/dev/null)"
         [ -n "$AGH_TZ" ] && export TZ="$AGH_TZ"
@@ -447,11 +462,11 @@ ensure_agh_started() {
     return 1
 }
 
-# 检查 iptables -t nat -S 中本模块的 DNS 转发链是否完整且无重复叠加
+# 同时检查 nat 表 (ADGUARD DNS 链) 与 mangle 表 (AGH_SNI 嗅探链) 是否完整生效且无重复叠加
 nat_rules_healthy() {
     [ -f "$SCRIPT_DIR/config.prop" ] && . "$SCRIPT_DIR/config.prop"
     redir_port=${redir_port:-55453}
-    ENABLE_SNI=${ENABLE_SNI:-0}
+    ENABLE_SNI=${ENABLE_SNI:-1}
 
     nat_dump=$(iptables -w 2 -t nat -S 2>/dev/null) || return 1
     jump_cnt=$(printf '%s\n' "$nat_dump" | grep -c -- '^-A OUTPUT -j ADGUARD$')
@@ -460,7 +475,11 @@ nat_rules_healthy() {
     printf '%s\n' "$nat_dump" | grep -qE -- "^-A ADGUARD .*-p udp .*--dport 53 -j REDIRECT --to-ports ${redir_port}([[:space:]]|\$)" || return 1
     iptables -w 2 -t filter -C OUTPUT -j ADGUARD_DOT >/dev/null 2>&1 || return 1
     if [ "$ENABLE_SNI" = "1" ]; then
-        iptables -w 2 -t filter -C OUTPUT -j AGH_SNI >/dev/null 2>&1 || return 1
+        mangle_dump=$(iptables -w 2 -t mangle -S 2>/dev/null) || return 1
+        sni_jump_cnt=$(printf '%s\n' "$mangle_dump" | grep -c -- '^-A OUTPUT -j AGH_SNI$')
+        [ "$sni_jump_cnt" -eq 1 ] || return 1
+        printf '%s\n' "$mangle_dump" | grep -qE -- "^-A AGH_SNI .*-m owner --gid-owner ${AGH_GID} -j RETURN([[:space:]]|\$)" || return 1
+        printf '%s\n' "$mangle_dump" | grep -qE -- "^-A AGH_SNI .*-p tcp .*--dport 443 .*-j NFQUEUE .*--queue-bypass" || return 1
     fi
     return 0
 }

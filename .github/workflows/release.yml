@@ -15,7 +15,7 @@ jobs:
 
       - name: Build Unified Flashable Package
         run: |
-          VERSION_TAG="${GITHUB_REF_NAME:-v20261112.2}"
+          VERSION_TAG="${GITHUB_REF_NAME:-v20261112.3}"
           VERSION_DATE="${VERSION_TAG#v}"
           chmod +x ./build.sh
           ./build.sh "$VERSION_DATE"
@@ -27,7 +27,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.VERSION_TAG }}
-          name: "AdGuard Home GoGoGo ${{ env.VERSION_TAG }} (Ultra-Slim Core)"
+          name: "AdGuard Home GoGoGo ${{ env.VERSION_TAG }} (Full-Strength DNS + SNI Core)"
           files: |
             releases/AdGuard_Home_gogogo_${{ env.VERSION_DATE }}.zip
             releases/AdGuardHomeManager.apk

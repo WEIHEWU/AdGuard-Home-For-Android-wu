@@ -2,11 +2,11 @@
 # AdGuardHome DNS 重定向端口
 redir_port=59156
 
-# SNI 深度嗅探防 HTTPDNS 绕过 (0: 默认纯 DNS 轻量防火墙模式，零代理冲突；1: 开启 NFQUEUE 首包嗅探需配合 sni 版核心)
-ENABLE_SNI=0
+# SNI 深度嗅探防 HTTPDNS 绕过 (1: 默认开启 mangle 首包 NFQUEUE 嗅探，强制 --queue-bypass 零断流；0: 仅纯 DNS 过滤)
+ENABLE_SNI=1
 
 # SNI 队列端口
-sni_ports="443,8443"
+sni_ports="443"
 
 # 代理订阅链接（若使用Box/Clash模块，可在此填入订阅链接；留空则不修改代理配置）
 PROXY_URL=""
