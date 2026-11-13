@@ -2,7 +2,7 @@
 
 > **AdGuard-Home-GoGoGo - 面向 Android 的轻量级 AdGuard Home 模块，支持海外/国内双模一键切换与精准去广告**
 
-**[📥 下载全能统一模块包 (AdGuard_Home_gogogo_20261112.3.zip)](https://github.com/WEIHEWU/AdGuard-Home-GoGoGo/releases/download/v20261112.3/AdGuard_Home_gogogo_20261112.3.zip)** · **[📱 单独下载管理器 APK (v2.24.17)](https://github.com/WEIHEWU/AdGuard-Home-GoGoGo/releases/download/v20261112.3/AdGuardHomeManager.apk)** · [Releases 页面 (`v20261112.3`)](https://github.com/WEIHEWU/AdGuard-Home-GoGoGo/releases/latest)
+**[📥 下载全能统一模块包 (AdGuard_Home_gogogo_20261112.4.zip)](https://github.com/WEIHEWU/AdGuard-Home-GoGoGo/releases/download/v20261112.4/AdGuard_Home_gogogo_20261112.4.zip)** · **[📱 单独下载管理器 APK (v2.24.18)](https://github.com/WEIHEWU/AdGuard-Home-GoGoGo/releases/download/v20261112.4/AdGuardHomeManager.apk)** · [Releases 页面 (`v20261112.4`)](https://github.com/WEIHEWU/AdGuard-Home-GoGoGo/releases/latest)
 
 基于 Magisk / KernelSU / APatch 的 **AdGuard-Home-GoGoGo**（模块显示名称：`AdGuard Home GoGoGo`）全设备级满血 DNS + SNI 双引擎去广告防火墙模块。内置专属深度瘦身核心 **[AdGuard-Home-GoGoGo-Core](https://github.com/WEIHEWU/AdGuard-Home-GoGoGo-Core)**（`11.75 MiB` 纯静态 `ARMv8.2` LSE 加速、完整内置 NFQUEUE SNI 过滤、100% 零后台磁盘写 I/O），专为追求**极致省电、零断流、局域网免检直通、临时 Root 软重启 30 秒自愈、以及 VPN / 代理无缝协同**打造。
 
@@ -58,7 +58,7 @@
 
 ```bash
 chmod +x build.sh
-./build.sh 20261112.3
+./build.sh 20261112.4
 ```
 
 ## 维护与开源

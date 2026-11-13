@@ -313,9 +313,12 @@ apply_rules() {
     iptables -w 2 -t nat -N ADGUARD 2>/dev/null
     iptables -w 2 -t nat -F ADGUARD
     iptables -w 2 -t nat -I OUTPUT 1 -j ADGUARD
-    # 【核心修复】：始终优先挂载专属 GID (23333) 豁免规则，与系统 netd (uid 0, gid 0) 彻底物理隔离！
+    # 【核心修复 1】：优先把目的地址为本机 127.0.0.1:53 的查询重定向至 $redir_port（Android 无 /etc/resolv.conf，防止核心或本机服务查 127.0.0.1:53 落空超时）
+    iptables -w 2 -t nat -A ADGUARD -d 127.0.0.1/32 -p udp --dport 53 -j REDIRECT --to-ports "$redir_port"
+    iptables -w 2 -t nat -A ADGUARD -d 127.0.0.1/32 -p tcp --dport 53 -j REDIRECT --to-ports "$redir_port"
+    # 【核心修复 2】：挂载专属 GID (23333) 豁免规则，与系统 netd (uid 0, gid 0) 彻底物理隔离！
     # 无论 WiFi / 回国 VPN 的 DNS 是否与上游 IP (如 1.1.1.1 / 8.8.8.8 / 223.5.5.5) 撞车，
-    # netd 发起的 53 端口系统解析 100% 强制进入 AdGuardHome，同时 AGH 自身的 Bootstrap/上游请求永不自回环死锁！
+    # netd 发起的 53 端口系统解析 100% 强制进入 AdGuardHome，同时 AGH 自身的非本机 Bootstrap/上游请求永不自回环死锁！
     iptables -w 2 -t nat -A ADGUARD -m owner --uid-owner 0 --gid-owner "$AGH_GID" -j RETURN 2>/dev/null
     # 应用放行名单 UID 级内核直通（豁免应用内置 DNS 解析器直连请求）
     for auid in $allow_uids; do
@@ -337,9 +340,11 @@ apply_rules() {
     iptables -w 2 -t nat -A ADGUARD -p udp --dport 53 -j REDIRECT --to-ports "$redir_port"
     iptables -w 2 -t nat -A ADGUARD -p tcp --dport 53 -j REDIRECT --to-ports "$redir_port"
 
-    # 建立 IPv6 DNS 接管链：优先使用 ip6tables nat REDIRECT（防 Telstra 等纯 IPv6/464XLAT 移动网络断网），并同步豁免翻墙 VPN 隧道，不支持时自动回退 REJECT
+    # 建立 IPv6 DNS 接管链：优先使用 ip6tables nat REDIRECT（防 Telstra 等纯 IPv6/464XLAT 移动网络断网），并同步处理 [::1]:53 回环与翻墙 VPN 隧道，不支持时自动回退 REJECT
     ip6tables -w 2 -t nat -N ADGUARD6_NAT 2>/dev/null
     ip6tables -w 2 -t nat -F ADGUARD6_NAT 2>/dev/null
+    ip6tables -w 2 -t nat -A ADGUARD6_NAT -d ::1/128 -p udp --dport 53 -j REDIRECT --to-ports "$redir_port" 2>/dev/null
+    ip6tables -w 2 -t nat -A ADGUARD6_NAT -d ::1/128 -p tcp --dport 53 -j REDIRECT --to-ports "$redir_port" 2>/dev/null
     ip6tables -w 2 -t nat -A ADGUARD6_NAT -m owner --uid-owner 0 --gid-owner "$AGH_GID" -j RETURN 2>/dev/null
     for auid in $allow_uids; do
         ip6tables -w 2 -t nat -A ADGUARD6_NAT -m owner --uid-owner "$auid" -j RETURN 2>/dev/null
@@ -369,6 +374,8 @@ apply_rules() {
         ip6tables -w 2 -N ADGUARD6 2>/dev/null
         ip6tables -w 2 -F ADGUARD6
         ip6tables -w 2 -I OUTPUT 1 -j ADGUARD6
+        ip6tables -w 2 -A ADGUARD6 -d ::1/128 -p udp --dport 53 -j REJECT --reject-with icmp6-port-unreachable 2>/dev/null
+        ip6tables -w 2 -A ADGUARD6 -d ::1/128 -p tcp --dport 53 -j REJECT --reject-with tcp-reset 2>/dev/null
         ip6tables -w 2 -A ADGUARD6 -m owner --uid-owner 0 --gid-owner "$AGH_GID" -j RETURN 2>/dev/null
         for auid in $allow_uids; do
             ip6tables -w 2 -A ADGUARD6 -m owner --uid-owner "$auid" -j RETURN 2>/dev/null

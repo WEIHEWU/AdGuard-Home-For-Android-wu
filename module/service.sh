@@ -397,8 +397,6 @@ ensure_agh_started() {
 
         AGH_TZ="$(getprop persist.sys.timezone 2>/dev/null)"
         [ -n "$AGH_TZ" ] && export TZ="$AGH_TZ"
-        export GOGC=50
-        export GOMEMLIMIT=64MiB
         export SSL_CERT_DIR="/system/etc/security/cacerts/"
         [ -s "$CA_BUNDLE" ] && export SSL_CERT_FILE="$CA_BUNDLE"
 
@@ -471,6 +469,7 @@ nat_rules_healthy() {
     nat_dump=$(iptables -w 2 -t nat -S 2>/dev/null) || return 1
     jump_cnt=$(printf '%s\n' "$nat_dump" | grep -c -- '^-A OUTPUT -j ADGUARD$')
     [ "$jump_cnt" -eq 1 ] || return 1
+    printf '%s\n' "$nat_dump" | grep -qE -- "^-A ADGUARD -d 127\.0\.0\.1/32 -p udp .*--dport 53 -j REDIRECT --to-ports ${redir_port}([[:space:]]|\$)" || return 1
     printf '%s\n' "$nat_dump" | grep -q -- "--gid-owner $AGH_GID -j RETURN" || return 1
     printf '%s\n' "$nat_dump" | grep -qE -- "^-A ADGUARD .*-p udp .*--dport 53 -j REDIRECT --to-ports ${redir_port}([[:space:]]|\$)" || return 1
     iptables -w 2 -t filter -C OUTPUT -j ADGUARD_DOT >/dev/null 2>&1 || return 1
