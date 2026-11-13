@@ -52,6 +52,57 @@ if [ -n "$BB_BIN" ]; then
     command -v killall >/dev/null 2>&1 || killall() { "$BB_BIN" killall "$@"; }
 fi
 
+# 兼容第三方魔改 ROM 的安全休眠封装（防止 /system/bin/sleep 软链失效导致守护循环退化为 100% CPU 忙循环）
+safe_sleep() {
+    if sleep "$1" >/dev/null 2>&1; then
+        return 0
+    elif [ -n "$BB_BIN" ] && "$BB_BIN" sleep "$1" >/dev/null 2>&1; then
+        return 0
+    elif [ -x /system/bin/toybox ] && /system/bin/toybox sleep "$1" >/dev/null 2>&1; then
+        return 0
+    elif [ -x /system/bin/toolbox ] && /system/bin/toolbox sleep "$1" >/dev/null 2>&1; then
+        return 0
+    fi
+    return 1
+}
+
+# 系统「私人 DNS (Private DNS / DoT 853)」状态备份、自动关闭防逃逸与无损恢复闭环
+PRIV_DNS_BAK="$AGH_DIR/private_dns.bak"
+ensure_private_dns_off() {
+    cur_mode=$(settings get global private_dns_mode 2>/dev/null)
+    case "$cur_mode" in
+        ''|null|off) return 0 ;;
+    esac
+    if [ ! -f "$PRIV_DNS_BAK" ]; then
+        cur_spec=$(settings get global private_dns_specifier 2>/dev/null)
+        printf 'mode=%s\nspec=%s\n' "$cur_mode" "$cur_spec" > "$PRIV_DNS_BAK" 2>/dev/null
+    fi
+    settings put global private_dns_mode off >/dev/null 2>&1
+}
+
+restore_private_dns() {
+    [ -f "$PRIV_DNS_BAK" ] || return 0
+    bak_mode=$(sed -n 's/^mode=//p' "$PRIV_DNS_BAK" 2>/dev/null | head -n 1)
+    bak_spec=$(sed -n 's/^spec=//p' "$PRIV_DNS_BAK" 2>/dev/null | head -n 1)
+    if [ -n "$bak_mode" ] && [ "$bak_mode" != "null" ]; then
+        settings put global private_dns_mode "$bak_mode" >/dev/null 2>&1
+    fi
+    if [ -n "$bak_spec" ] && [ "$bak_spec" != "null" ]; then
+        settings put global private_dns_specifier "$bak_spec" >/dev/null 2>&1
+    fi
+    rm -f "$PRIV_DNS_BAK" 2>/dev/null
+}
+
+# 零开销清理因文件锁导致的 App 卸载残留目录 (*==deleted==)，彻底解决卸载重装失败问题
+clean_deleted_app_dirs() {
+    for d in /data/data/*==deleted== /data/user/0/*==deleted== /data/user/*/*==deleted==; do
+        if [ -d "$d" ]; then
+            chattr -R -i "$d" 2>/dev/null
+            rm -rf "$d" 2>/dev/null
+        fi
+    done
+}
+
 # 初始化内存级锁目录 (/dev/shm)，兼容 Android Bionic tmpfs
 mkdir -p /dev/shm 2>/dev/null
 if ( : >> /dev/shm/.agh_probe ) 2>/dev/null; then
@@ -479,6 +530,7 @@ nat_rules_healthy() {
         [ "$sni_jump_cnt" -eq 1 ] || return 1
         printf '%s\n' "$mangle_dump" | grep -qE -- "^-A AGH_SNI .*-m owner --gid-owner ${AGH_GID} -j RETURN([[:space:]]|\$)" || return 1
         printf '%s\n' "$mangle_dump" | grep -qE -- "^-A AGH_SNI .*-p tcp .*--dport 443 .*-j NFQUEUE .*--queue-bypass" || return 1
+        printf '%s\n' "$mangle_dump" | grep -qE -- "^-A AGH_SNI .*-p tcp .*--dport 8443 .*-j NFQUEUE .*--queue-bypass" || return 1
     fi
     return 0
 }
@@ -551,7 +603,7 @@ if [ "$1" = "--watchdog" ]; then
     cleaned_when_disabled=0
 
     while true; do
-        sleep 30
+        safe_sleep 30 || exit 0
 
         # 软重启过渡期间等待 Android 系统服务与 netd 初始化就绪
         boot_ok=$(getprop sys.boot_completed 2>/dev/null)
@@ -562,12 +614,17 @@ if [ "$1" = "--watchdog" ]; then
             if is_module_disabled && [ "$cleaned_when_disabled" -eq 0 ]; then
                 disarm_nat_safety_valve
                 stop_agh_wait
+                restore_private_dns
                 cleaned_when_disabled=1
                 log_msg "[WATCHDOG] 检测到模块已禁用 ($MODDIR/disable)，已清理规则并进入静默状态"
             fi
             continue
         fi
         cleaned_when_disabled=0
+
+        # 1b. 防系统「私人 DNS」绕过与卸载残留目录 (*==deleted==) 轻量清理（无残留时 0 子进程开销）
+        ensure_private_dns_off
+        clean_deleted_app_dirs
 
         # 2. 核心与端口健康检查：若未运行或端口异常，先卸规则防断网再自愈拉起；存活正常则零干预保留 24h 内存统计
         [ -f "$SCRIPT_DIR/config.prop" ] && . "$SCRIPT_DIR/config.prop"
@@ -613,6 +670,8 @@ fi
 # ==============================================================================
 if [ "$1" = "restart" ] || [ "$1" = "--restart" ]; then
     clear_stop_locks
+    ensure_private_dns_off
+    clean_deleted_app_dirs
     # 先卸下 NAT 劫持规则防切换瞬间死锁断网，再干净等待旧进程释放端口
     disarm_nat_safety_valve
     stop_agh_wait
@@ -633,6 +692,8 @@ fi
 # ==============================================================================
 if [ "$1" = "repair" ] || [ "$1" = "--repair" ]; then
     clear_stop_locks
+    ensure_private_dns_off
+    clean_deleted_app_dirs
     start_singleton_watchdog
     if ensure_agh_started; then
         remount_nat_rules "manual-repair"
@@ -652,6 +713,7 @@ if [ "$1" = "stop" ] || [ "$1" = "--stop" ]; then
     : > "$SESSION_STOP_FILE" 2>/dev/null
     disarm_nat_safety_valve
     stop_agh_wait
+    restore_private_dns
     ndc resolver flushenv >/dev/null 2>&1 || true
     log_msg "[INFO] 已收到手动停止指令，核心与防火墙规则已卸下，守护进程保持静默"
     exit 0
@@ -689,6 +751,9 @@ if is_manually_stopped; then
     start_singleton_watchdog
     exit 0
 fi
+
+ensure_private_dns_off
+clean_deleted_app_dirs
 
 if ! ensure_agh_started; then
     disarm_nat_safety_valve

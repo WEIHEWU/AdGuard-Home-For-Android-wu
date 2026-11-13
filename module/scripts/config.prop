@@ -6,7 +6,7 @@ redir_port=59156
 ENABLE_SNI=1
 
 # SNI 队列端口
-sni_ports="443"
+sni_ports="443,8443"
 
 # 代理订阅链接（若使用Box/Clash模块，可在此填入订阅链接；留空则不修改代理配置）
 PROXY_URL=""

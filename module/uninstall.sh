@@ -105,7 +105,7 @@ _traverse() {
 if [ -f "$NOADS_SCRIPT" ]; then
     while IFS= read -r line; do
         case "$line" in
-            *block_ad*)
+            *block_ad*|*safe_clean*)
                 path="${line#*\"}"
                 path="${path%%\"*}"
                 [ -n "$path" ] && [ -e "$path" ] && _traverse "$path"
@@ -113,16 +113,27 @@ if [ -f "$NOADS_SCRIPT" ]; then
         esac
     done < "$NOADS_SCRIPT"
 fi
+for d in /data/data/*==deleted== /data/user/0/*==deleted== /data/user/*/*==deleted==; do
+    [ -d "$d" ] && chattr -R -i "$d" 2>/dev/null && rm -rf "$d" 2>/dev/null
+done
 
-# 5. 解除模块自身文件的防篡改锁定，并彻底删除数据与模块目录
+# 5. 恢复系统私人DNS设置（优先从备份还原用户原设置，无备份时恢复为默认自动模式）
+PRIV_DNS_BAK="$AGH_DIR/private_dns.bak"
+if [ -f "$PRIV_DNS_BAK" ]; then
+    bak_mode=$(sed -n 's/^mode=//p' "$PRIV_DNS_BAK" 2>/dev/null | head -n 1)
+    bak_spec=$(sed -n 's/^spec=//p' "$PRIV_DNS_BAK" 2>/dev/null | head -n 1)
+    [ -n "$bak_mode" ] && [ "$bak_mode" != "null" ] && settings put global private_dns_mode "$bak_mode" 2>/dev/null
+    [ -n "$bak_spec" ] && [ "$bak_spec" != "null" ] && settings put global private_dns_specifier "$bak_spec" 2>/dev/null
+elif [ "$(settings get global private_dns_mode 2>/dev/null)" = "off" ]; then
+    settings put global private_dns_mode opportunistic 2>/dev/null
+fi
+
+# 6. 解除模块自身文件的防篡改锁定，并彻底删除数据与模块目录
 for dir in "$AGH_DIR" "$ADGPATH"; do
     [ -d "$dir" ] && chattr -R -i "$dir" 2>/dev/null
 done
 [ -d "$AGH_DIR" ] && rm -rf "$AGH_DIR"
 [ -d "$ADGPATH" ] && rm -rf "$ADGPATH"
-
-# 6. 恢复系统私人DNS设置 (从关闭状态恢复为系统的默认自动模式)
-[ "$(settings get global private_dns_mode)" = "off" ] && settings put global private_dns_mode opportunistic 2>/dev/null
 
 # 7. 刷新网络状态（使手机立即生效原生网络与DNS，温和刷新不打断飞行模式）
 ndc resolver flushenv 2>/dev/null

@@ -19,11 +19,22 @@ if [ -f "$LAST_TIME_FILE" ]; then
 fi
 echo "$NOW" > "$LAST_TIME_FILE"
 
-# 3. 自动关闭系统私人DNS（防止DoT通过853端口绕过本地AdGuard拦截）
-[ "$(settings get global private_dns_mode 2>/dev/null)" = "off" ] || settings put global private_dns_mode off 2>/dev/null
+# 3. 备份并自动关闭系统私人DNS（防止DoT通过853端口绕过本地AdGuard拦截，停止/卸载模块时自动恢复）
+PRIV_DNS_BAK="/data/adb/agh/private_dns.bak"
+cur_priv_dns=$(settings get global private_dns_mode 2>/dev/null)
+case "$cur_priv_dns" in
+    ''|null|off) ;;
+    *)
+        if [ ! -f "$PRIV_DNS_BAK" ]; then
+            cur_priv_spec=$(settings get global private_dns_specifier 2>/dev/null)
+            printf 'mode=%s\nspec=%s\n' "$cur_priv_dns" "$cur_priv_spec" > "$PRIV_DNS_BAK" 2>/dev/null
+        fi
+        settings put global private_dns_mode off 2>/dev/null
+        ;;
+esac
 
-# 4. 清理卸载残留的删除标记目录
-for d in /data/data/*==deleted==; do
+# 4. 清理卸载残留的删除标记目录（含多用户目录，彻底防止卸载后重装 App 失败）
+for d in /data/data/*==deleted== /data/user/0/*==deleted== /data/user/*/*==deleted==; do
     [ -d "$d" ] && chattr -R -i "$d" 2>/dev/null && rm -rf "$d" 2>/dev/null
 done
 
@@ -315,6 +326,9 @@ for sdk_dir in \
     /data/data/*/files/mbridge \
     /data/data/*/cache/ksad_download \
     /data/data/*/cache/bdads \
+    /data/data/*/files/cn_jiguang_union_ads \
+    /data/data/*/cache/cn_jiguang_union_ads \
+    /data/data/*/cache/beizi \
     /data/media/0/Android/data/*/cache/UnityAdsCache \
     /data/media/0/Android/data/*/files/UnityAdsCache \
     /data/media/0/Android/data/*/cache/UnityAdsVideoCache \
@@ -323,6 +337,7 @@ for sdk_dir in \
     /data/media/0/Android/data/*/cache/pangle_com.byted.pangle \
     /data/media/0/Android/data/*/cache/gdt_plugin \
     /data/media/0/Android/data/*/cache/mbridge \
+    /data/media/0/Android/data/*/cache/beizi \
     /data/media/0/Android/data/*/cache/tad_cache; do
     [ -e "$sdk_dir" ] && safe_clean "$sdk_dir"
 done

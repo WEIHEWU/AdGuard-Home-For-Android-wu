@@ -15,7 +15,7 @@ jobs:
 
       - name: Build Unified Flashable Package
         run: |
-          VERSION_TAG="${GITHUB_REF_NAME:-v20261112.4}"
+          VERSION_TAG="${GITHUB_REF_NAME:-v20261113.1}"
           VERSION_DATE="${VERSION_TAG#v}"
           chmod +x ./build.sh
           ./build.sh "$VERSION_DATE"

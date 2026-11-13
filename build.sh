@@ -1,7 +1,7 @@
 #!/bin/sh
 set -e
 ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
-VERSION_DATE="${1:-20261112.4}"
+VERSION_DATE="${1:-20261113.1}"
 
 mkdir -p "$ROOT_DIR/releases"
 

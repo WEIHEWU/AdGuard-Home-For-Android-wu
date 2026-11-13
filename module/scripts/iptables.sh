@@ -137,13 +137,15 @@ rebuild_sni() {
     for net in $LAN_BYPASS_IPV4; do
         iptables -w 2 -t mangle -A AGH_SNI -d "$net" -j RETURN
     done
-    # 首包级低功耗抓包：优先探测内核 connbytes 支持，仅检查 TLS 握手前 4 个数据包；不支持则自动降级为标准 443 NFQUEUE，全程强制 --queue-bypass
-    if ! iptables -w 2 -t mangle -A AGH_SNI -p tcp --dport 443 \
-        -m connbytes --connbytes 1:4 --connbytes-dir original --connbytes-mode packets \
-        -j NFQUEUE --queue-num "$sni_queue" --queue-bypass 2>/dev/null; then
-        iptables -w 2 -t mangle -A AGH_SNI -p tcp --dport 443 \
-            -j NFQUEUE --queue-num "$sni_queue" --queue-bypass 2>/dev/null
-    fi
+    # 首包级低功耗抓包：覆盖 443 与 8443 双端口（防国内流氓 SDK 通过 8443 端口绕过），仅检查 TLS 握手前 4 个数据包；不支持 connbytes 则自动降级，全程强制 --queue-bypass
+    for sni_port in 443 8443; do
+        if ! iptables -w 2 -t mangle -A AGH_SNI -p tcp --dport "$sni_port" \
+            -m connbytes --connbytes 1:4 --connbytes-dir original --connbytes-mode packets \
+            -j NFQUEUE --queue-num "$sni_queue" --queue-bypass 2>/dev/null; then
+            iptables -w 2 -t mangle -A AGH_SNI -p tcp --dport "$sni_port" \
+                -j NFQUEUE --queue-num "$sni_queue" --queue-bypass 2>/dev/null
+        fi
+    done
     if iptables -w 2 -t mangle -S AGH_SNI 2>/dev/null | grep -q -- "-j NFQUEUE"; then
         iptables -w 2 -t mangle -C OUTPUT -j AGH_SNI 2>/dev/null || \
             iptables -w 2 -t mangle -I OUTPUT 1 -j AGH_SNI
@@ -160,12 +162,14 @@ rebuild_sni() {
     for net in $LAN_BYPASS_IPV6; do
         ip6tables -w 2 -t mangle -A AGH_SNI -d "$net" -j RETURN 2>/dev/null
     done
-    if ! ip6tables -w 2 -t mangle -A AGH_SNI -p tcp --dport 443 \
-        -m connbytes --connbytes 1:4 --connbytes-dir original --connbytes-mode packets \
-        -j NFQUEUE --queue-num "$sni_queue" --queue-bypass 2>/dev/null; then
-        ip6tables -w 2 -t mangle -A AGH_SNI -p tcp --dport 443 \
-            -j NFQUEUE --queue-num "$sni_queue" --queue-bypass 2>/dev/null
-    fi
+    for sni_port in 443 8443; do
+        if ! ip6tables -w 2 -t mangle -A AGH_SNI -p tcp --dport "$sni_port" \
+            -m connbytes --connbytes 1:4 --connbytes-dir original --connbytes-mode packets \
+            -j NFQUEUE --queue-num "$sni_queue" --queue-bypass 2>/dev/null; then
+            ip6tables -w 2 -t mangle -A AGH_SNI -p tcp --dport "$sni_port" \
+                -j NFQUEUE --queue-num "$sni_queue" --queue-bypass 2>/dev/null
+        fi
+    done
     if ip6tables -w 2 -t mangle -S AGH_SNI 2>/dev/null | grep -q -- "-j NFQUEUE"; then
         ip6tables -w 2 -t mangle -C OUTPUT -j AGH_SNI 2>/dev/null || \
             ip6tables -w 2 -t mangle -I OUTPUT 1 -j AGH_SNI 2>/dev/null

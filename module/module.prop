@@ -1,6 +1,6 @@
 id=AdGuardHome
 name=AdGuard Home GoGoGo
-version=20261112.4
-versionCode=2026111204
+version=20261113.1
+versionCode=2026111301
 author=wu
-description=面向 Android 的轻量级满血 DNS + SNI 双引擎去广告防火墙模块，内置海外/国内双模一键切换、分应用白名单与软重启自愈，零磁盘磨损，点击操作按钮打开管理器（默认账号密码 root）
+description=面向 Android 的轻量级满血 DNS + SNI (443/8443) 双引擎去广告防火墙模块，内置海外/国内双模一键切换、分应用白名单与软重启自愈，零磁盘磨损，点击操作按钮打开管理器（默认账号密码 root）
